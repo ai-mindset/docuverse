@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=75", "setuptools_scm[toml]>=8.1"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "docuverse"
+version = "0.1.0"
+description = "Q&A app for easy information retrieval from documents of interest"
+
+readme = "README.md"
+authors = [{ name = "Eirini", email = "email@example.com" }]
+requires-python = ">=3.13"
+dependencies = [
+    "customtkinter>=5.2.2", # Create modern looking GUIs with Python
+    "pydantic>=2.10.6", # Data validation using Python type hints
+    "python-dotenv>=1.0.1", # Read key-value pairs from a .env file and set them as env vars
+    "pymongo>=4.11", # Python driver for MongoDB 
+    "langchain-community>=0.3.16", # Community contributed LangChain integrations 
+    "langchain-ollama>=0.2.3", # An integration package connecting Ollama and LangChain
+]
+
+[project.optional-dependencies]
+dev = [
+    "pynvim>=0.5.2", # Python client for Neovim
+    "jedi-language-server>=0.43.1", # A language server for Jedi!
+    "ruff>=0.9.3", # An extremely fast Python linter and code formatter, written in Rust
+    "ipython>=8.31.0", # IPython: Productive Interactive Computing
+    "plotext>=5.3.2", # plotext plots directly on terminal
+    "ipdb>=0.13.13", # IPython-enabled pdb
+    "tqdm>=4.67.1", # Fast, Extensible Progress Meter]
+]
+
+[tool.ruff]
+lint.select = ["I", "N", "UP"]
+        # `I`: isort
+        # `N`: pep8-naming
+        # `UP`: pyupgrade
+lint.ignore = ["N803"]
+line-length = 90
+target-version = "py313"
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
