@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "docuverse"
-version = "0.1.0"
+version = "1.0.0"
 description = "Q&A app for easy information retrieval from documents of interest"
 
 readme = "README.md"
