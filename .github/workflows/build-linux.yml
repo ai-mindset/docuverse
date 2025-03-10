@@ -1,0 +1,88 @@
+name: Build Linux AppImage
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller toml
+          pip install -e .
+      
+      - name: Extract version from pyproject.toml
+        id: get_version
+        run: |
+          VERSION=$(python -c "import toml; print(toml.load('pyproject.toml')['project']['version'])")
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "Version: $VERSION"
+      
+      - name: Build with PyInstaller
+        run: |
+          pyinstaller --onefile --name="dv-${{ env.VERSION }}-linux" main.py
+      
+      - name: Install AppImage tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fuse libfuse2
+          wget -O appimagetool "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
+          chmod +x appimagetool
+      
+      - name: Create AppDir structure
+        run: |
+          mkdir -p AppDir/usr/bin
+          mkdir -p AppDir/usr/share/applications
+          mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
+          cp dist/dv-${{ env.VERSION }}-linux AppDir/usr/bin/dv
+          chmod +x AppDir/usr/bin/dv
+          
+          # Create desktop file
+          cat > AppDir/usr/share/applications/dv.desktop << EOF
+          [Desktop Entry]
+          Name=DV
+          Comment=Document Q&A System
+          Exec=dv
+          Icon=dv
+          Terminal=false
+          Type=Application
+          Categories=Utility;
+          EOF
+          
+          # Create AppRun file
+          cat > AppDir/AppRun << EOF
+          #!/bin/bash
+          SELF=\$(readlink -f "\$0")
+          HERE=\${SELF%/*}
+          export PATH="\${HERE}/usr/bin:\${PATH}"
+          "\${HERE}/usr/bin/dv" "\$@"
+          EOF
+          
+          chmod +x AppDir/AppRun
+          
+          # Create a simple icon (replace with your actual icon if available)
+          convert -size 256x256 xc:transparent -fill black -draw "circle 128,128 128,64" AppDir/usr/share/icons/hicolor/256x256/apps/dv.png
+      
+      - name: Build AppImage
+        run: |
+          ./appimagetool AppDir "DV-${{ env.VERSION }}-x86_64.AppImage"
+      
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: dv-linux
+          path: DV-${{ env.VERSION }}-x86_64.AppImage
