@@ -34,7 +34,7 @@ jobs:
       
       - name: Build with PyInstaller
         run: |
-          pyinstaller --onefile --name="dv-${{ env.VERSION }}-linux" src/dv/main.py
+          pyinstaller --onefile --name="dv-${{ env.VERSION }}-linux" main.py
       
       - name: Install AppImage tools
         run: |
@@ -51,8 +51,8 @@ jobs:
           cp dist/dv-${{ env.VERSION }}-linux AppDir/usr/bin/dv
           chmod +x AppDir/usr/bin/dv
           
-          # Create desktop file
-          cat > AppDir/usr/share/applications/dv.desktop << EOF
+          # Create desktop file (in root directory as expected by appimagetool)
+          cat > AppDir/dv.desktop << EOF
           [Desktop Entry]
           Name=DV
           Comment=Document Q&A System
@@ -62,6 +62,9 @@ jobs:
           Type=Application
           Categories=Utility;
           EOF
+          
+          # Also keep the one in the standard location
+          cp AppDir/dv.desktop AppDir/usr/share/applications/
           
           # Create AppRun file
           cat > AppDir/AppRun << EOF
@@ -75,7 +78,8 @@ jobs:
           chmod +x AppDir/AppRun
           
           # Create a simple icon (replace with your actual icon if available)
-          convert -size 256x256 xc:transparent -fill black -draw "circle 128,128 128,64" AppDir/usr/share/icons/hicolor/256x256/apps/dv.png
+          convert -size 256x256 xc:transparent -fill black -draw "circle 128,128 128,64" AppDir/dv.png
+          cp AppDir/dv.png AppDir/usr/share/icons/hicolor/256x256/apps/
       
       - name: Build AppImage
         run: |
