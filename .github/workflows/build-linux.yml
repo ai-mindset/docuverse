@@ -34,7 +34,7 @@ jobs:
       
       - name: Build with PyInstaller
         run: |
-          pyinstaller --onefile --name="dv-${{ env.VERSION }}-linux" main.py
+          pyinstaller --onefile --name="dv-${{ env.VERSION }}-linux" src/dv/main.py
       
       - name: Install AppImage tools
         run: |
