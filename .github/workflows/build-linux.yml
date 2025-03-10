@@ -258,24 +258,24 @@ jobs:
       - name: Check if running on tag
         id: check-tag
         run: |
-          if [[ $GITHUB_REF == refs/tags/v* ]]; then
+          if [[ $GITHUB_REF == refs/tags/* ]]; then
             echo "IS_TAG=true" >> $GITHUB_ENV
-            RELEASE_VERSION=${GITHUB_REF#refs/tags/v}
-            echo "RELEASE_VERSION=$RELEASE_VERSION" >> $GITHUB_ENV
-            echo "Running on tag: $GITHUB_REF, version: $RELEASE_VERSION"
+            echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+            echo "Running on tag: $GITHUB_REF, tag name: ${GITHUB_REF#refs/tags/}"
           else
             echo "IS_TAG=false" >> $GITHUB_ENV
             echo "Not running on a tag: $GITHUB_REF"
           fi
-          
+      
       - name: Create Release
         uses: softprops/action-gh-release@v1
         if: env.IS_TAG == 'true'
         with:
           files: dv-${{ env.VERSION }}-x86_64.AppImage
           name: dv ${{ env.VERSION }}
+          tag_name: ${{ env.TAG_NAME }}
           body: |
-            dv Q&A App Release v${{ env.VERSION }}
+            # dv Q&A App Release v${{ env.VERSION }}
             
             This release provides the Linux AppImage for dv, a Q&A application for easy information retrieval from documents of interest.
             
