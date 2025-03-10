@@ -39,7 +39,7 @@ jobs:
       - name: Install AppImage tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y fuse libfuse2
+          sudo apt-get install -y fuse libfuse2 imagemagick
           wget -O appimagetool "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
           chmod +x appimagetool
       
