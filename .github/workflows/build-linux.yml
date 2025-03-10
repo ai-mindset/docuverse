@@ -157,7 +157,7 @@ jobs:
         run: |
           source .venv/bin/activate
           # Build with verbose output and clean build directory
-          python -m PyInstaller --clean --verbose dv.spec
+          python -m PyInstaller --clean dv.spec
       
       - name: Verify built binary
         run: |
