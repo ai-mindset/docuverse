@@ -63,7 +63,7 @@ class Settings(BaseModel):
 
     GUI_FONT: dict[str, int] = Field(
         default={
-            "size": 17,
+            "size": 18,
             "weight": "bold",
         }
     )

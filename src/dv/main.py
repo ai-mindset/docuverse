@@ -17,6 +17,7 @@ from dv.database import connect_to_db, process_all_documents
 from dv.gui import main as gui_main
 from dv.logger import setup_logging
 
+# %%
 # Ensure EXIT_KEYWORDS is in settings
 if not hasattr(settings, "EXIT_KEYWORDS"):
     settings.EXIT_KEYWORDS = ["bye", "exit", "goodbye", "quit"]
@@ -25,6 +26,7 @@ if not hasattr(settings, "EXIT_KEYWORDS"):
 logger = setup_logging(settings.log_level)
 
 
+# %%
 def check_database_exists() -> bool:
     """
     Check if the SQLite database file exists.
@@ -35,6 +37,7 @@ def check_database_exists() -> bool:
     return os.path.exists(settings.SQLITE_DB_PATH)
 
 
+# %%
 def check_database_populated() -> bool:
     """
     Check if the database has tables with data.
@@ -77,6 +80,7 @@ def check_database_populated() -> bool:
         return False
 
 
+# %%
 def check_docs_directory() -> bool:
     """
     Check if the docs directory exists and contains documents.
@@ -104,6 +108,7 @@ def check_docs_directory() -> bool:
     return True
 
 
+# %%
 def initialize_database() -> bool:
     """
     Initialize the database by processing all documents.
@@ -128,6 +133,7 @@ def initialize_database() -> bool:
     return success
 
 
+# %%
 def parse_arguments() -> argparse.Namespace:
     """
     Parse command line arguments.
@@ -182,6 +188,7 @@ def parse_arguments() -> argparse.Namespace:
     return args
 
 
+# %%
 def exit_with_error(message: str, exit_code: int = 1) -> NoReturn:
     """
     Print error message and exit the program with the specified exit code.
@@ -195,67 +202,96 @@ def exit_with_error(message: str, exit_code: int = 1) -> NoReturn:
     sys.exit(exit_code)
 
 
-def cli_prompt_loop() -> int:
+# %%
+def gui_prompt_loop(args: argparse.Namespace) -> int:
     """
-    Custom implementation of CLI prompt loop with exit keyword handling.
+    Custom implementation of GUI prompt loop with exit keyword handling.
+
+    Args:
+        args: Command line arguments.
 
     Returns:
         int: Exit code (0 for success, non-zero for errors).
     """
-    from dv.qa import create_qa_chain
+    import customtkinter as ctk
 
-    print(f"Q&A system initialized with model: {settings.LLM_MODEL}")
-    print(
-        f"Type any of {settings.EXIT_KEYWORDS} to quit or 'reset' to start a new conversation"
-    )
-    print("-" * 50)
+    from dv.gui import QAApplication
 
-    # Create the QA chain
+    # Set appearance mode and default color theme
+    ctk.set_appearance_mode("light" if args.light_mode else "dark")
+    ctk.set_default_color_theme("blue")
+
     try:
-        qa = create_qa_chain(
-            model_name=settings.LLM_MODEL,
-            temperature=0.1,  # Default temperature
-            k=3,  # Default number of results
-        )
+        # Create the root window
+        root = ctk.CTk()
+
+        # Custom QAApplication with exit keyword handling
+        class EnhancedQAApplication(QAApplication):
+            def __init__(self, root):
+                """Initialize with added exit keyword handling."""
+                super().__init__(root)
+
+            def on_send_click(self, event=None):
+                """Override to handle exit keywords."""
+                question = self.question_entry.get().strip()
+
+                if not question:
+                    # Flash the entry widget to indicate it's empty
+                    original_fg = self.question_entry.cget("fg_color")
+                    self.question_entry.configure(fg_color="#3d1a1a")
+                    self.root.after(
+                        100, lambda: self.question_entry.configure(fg_color=original_fg)
+                    )
+                    return
+
+                # Check for exit keywords
+                if question.lower() in (
+                    keyword.lower() for keyword in settings.EXIT_KEYWORDS
+                ):
+                    print("Goodbye!")
+                    self.root.quit()
+                    return
+
+                # Clear the entry
+                self.question_entry.delete(0, "end")
+
+                # Update chat with user's question
+                self.update_chat("User", question)
+
+                # Disable UI elements during processing
+                self.toggle_ui(False)
+
+                # Start processing animation
+                self.start_processing_animation()
+
+                # Process query in a separate thread
+                import threading
+
+                threading.Thread(
+                    target=self.process_query, args=(question,), daemon=True
+                ).start()
+
+        # Create and run the application
+        app = EnhancedQAApplication(root)
+
+        # Add window close event handling
+        def on_closing():
+            """Handle window closing event."""
+            print("Goodbye!")
+            root.quit()
+
+        root.protocol("WM_DELETE_WINDOW", on_closing)
+
+        # Start the GUI main loop
+        root.mainloop()
+        return 0
+
     except Exception as e:
-        return exit_with_error(f"Failed to initialize QA system: {str(e)}")
-
-    # Interactive loop
-    while True:
-        try:
-            # Get user input
-            question = input("\nQuestion: ").strip()
-
-            # Check for exit keywords
-            if question.lower() in (
-                keyword.lower() for keyword in settings.EXIT_KEYWORDS
-            ):
-                print("Goodbye!")
-                return 0
-
-            # Check for reset command
-            if question.lower() == "reset":
-                qa.reset_chat_history()
-                print("Conversation has been reset.")
-                continue
-
-            # Skip empty questions
-            if not question:
-                continue
-
-            # Process the question
-            answer = qa.query(question)
-            print("\nAnswer:", answer)
-
-        except KeyboardInterrupt:
-            print("\nGoodbye!")
-            return 0
-        except Exception as e:
-            logger.error(f"Error in CLI: {str(e)}")
-            print(f"An error occurred: {str(e)}")
-            # Continue the loop rather than exiting on error
+        logger.error(f"Error in GUI: {str(e)}")
+        return exit_with_error(f"GUI error: {str(e)}")
 
 
+# %%
 def main() -> int:
     """
     Main entry point for the application.
@@ -301,14 +337,8 @@ def main() -> int:
             # Use our custom CLI implementation that handles exit keywords properly
             return cli_prompt_loop()
         else:
-            # Convert our args to the format expected by GUI
-            gui_args = argparse.Namespace(
-                model=args.model,
-                light_mode=args.light_mode,
-            )
-            gui_main(gui_args)
-
-        return 0
+            # Use our custom GUI implementation that handles exit keywords properly
+            return gui_prompt_loop(args)
 
     except KeyboardInterrupt:
         logger.info("Program terminated by user")
@@ -318,5 +348,6 @@ def main() -> int:
         return exit_with_error(f"An unexpected error occurred: {str(e)}")
 
 
+# %%
 if __name__ == "__main__":
     sys.exit(main())
