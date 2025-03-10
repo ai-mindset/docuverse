@@ -22,17 +22,30 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.13'
-          cache: 'pip'
       
-      - name: Install dependencies
+      - name: Install uv
         run: |
-          python -m pip install --upgrade pip
-          pip install pyinstaller toml
-          pip install -e .
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+      
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fuse libfuse2 imagemagick
+          wget -O appimagetool "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
+          chmod +x appimagetool
+      
+      - name: Create virtual environment and install dependencies
+        run: |
+          uv venv
+          source .venv/bin/activate
+          uv pip install -e .
+          uv pip install pyinstaller toml
       
       - name: Extract version from pyproject.toml
         id: get_version
         run: |
+          source .venv/bin/activate
           VERSION=$(python -c "import toml; print(toml.load('pyproject.toml')['project']['version'])")
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "Version: $VERSION"
@@ -42,70 +55,77 @@ jobs:
       
       - name: Build with PyInstaller
         run: |
+          source .venv/bin/activate
           pyinstaller --onefile --name="dv-${{ env.VERSION }}-linux" src/dv/main.py
-      
-      - name: Install AppImage tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y fuse libfuse2 imagemagick
-          wget -O appimagetool "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
-          chmod +x appimagetool
       
       - name: Create AppDir structure
         run: |
           mkdir -p AppDir/usr/bin
           mkdir -p AppDir/usr/share/applications
           mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
+          mkdir -p AppDir/usr/share/docuverse
+          
+          # Copy the binary
           cp dist/dv-${{ env.VERSION }}-linux AppDir/usr/bin/dv
           chmod +x AppDir/usr/bin/dv
           
-          # Create desktop file (in root directory as expected by appimagetool)
-          cat > AppDir/dv.desktop << EOF
+          # Create desktop file
+          cat > AppDir/usr/share/applications/docuverse.desktop << EOF
           [Desktop Entry]
-          Name=DV
-          Comment=Document Q&A System
+          Name=DocuVerse
+          Comment=Q&A app for easy information retrieval from documents
           Exec=dv
-          Icon=dv
+          Icon=docuverse
           Terminal=false
           Type=Application
-          Categories=Utility;
+          Categories=Utility;Education;Office;
           EOF
           
-          # Also keep the one in the standard location
-          cp AppDir/dv.desktop AppDir/usr/share/applications/
-          
-          # Create AppRun file
+          # Create AppRun file (this is critical for AppImage functionality)
           cat > AppDir/AppRun << EOF
           #!/bin/bash
           SELF=\$(readlink -f "\$0")
           HERE=\${SELF%/*}
           export PATH="\${HERE}/usr/bin:\${PATH}"
+          # Add additional environment variables if needed
+          export DOCUVERSE_HOME="\${HERE}/usr/share/docuverse"
+          
+          # Execute the application
           "\${HERE}/usr/bin/dv" "\$@"
           EOF
           
+          # Make AppRun executable
           chmod +x AppDir/AppRun
           
-          # Create a simple icon (replace with your actual icon if available)
-          convert -size 256x256 xc:transparent -fill black -draw "circle 128,128 128,64" AppDir/dv.png
-          cp AppDir/dv.png AppDir/usr/share/icons/hicolor/256x256/apps/
+          # Create a simple icon for the application
+          convert -size 256x256 xc:transparent -fill blue -draw "circle 128,128 128,64" -font Arial -fill black -pointsize 24 -gravity center -annotate 0 "DV" AppDir/docuverse.png
+          cp AppDir/docuverse.png AppDir/usr/share/icons/hicolor/256x256/apps/
+          
+          # Copy desktop file to root as required by AppImage specification
+          cp AppDir/usr/share/applications/docuverse.desktop AppDir/docuverse.desktop
+          
+          # Copy icon to root as required by AppImage specification
+          cp AppDir/docuverse.png AppDir/.DirIcon
       
       - name: Build AppImage
         run: |
           # Set the architecture explicitly
-          ARCH=x86_64 ./appimagetool AppDir "DV-${{ env.VERSION }}-x86_64.AppImage"
+          ARCH=x86_64 ./appimagetool AppDir "DocuVerse-${{ env.VERSION }}-x86_64.AppImage"
       
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: dv-linux
-          path: DV-${{ env.VERSION }}-x86_64.AppImage
+          name: docuverse-linux
+          path: DocuVerse-${{ env.VERSION }}-x86_64.AppImage
           
       - name: Check if running on tag
         id: check-tag
         run: |
           if [[ $GITHUB_REF == refs/tags/v* ]]; then
             echo "IS_TAG=true" >> $GITHUB_ENV
-            echo "Running on tag: $GITHUB_REF"
+            RELEASE_VERSION=${GITHUB_REF#refs/tags/v}
+            echo "RELEASE_VERSION=$RELEASE_VERSION" >> $GITHUB_ENV
+            echo "Running on tag: $GITHUB_REF, version: $RELEASE_VERSION"
           else
             echo "IS_TAG=false" >> $GITHUB_ENV
             echo "Not running on a tag: $GITHUB_REF"
@@ -115,8 +135,17 @@ jobs:
         uses: softprops/action-gh-release@v1
         if: env.IS_TAG == 'true'
         with:
-          files: DV-${{ env.VERSION }}-x86_64.AppImage
-          name: DV ${{ env.VERSION }}
+          files: DocuVerse-${{ env.VERSION }}-x86_64.AppImage
+          name: DocuVerse ${{ env.VERSION }}
+          body: |
+            DocuVerse Q&A App Release v${{ env.VERSION }}
+            
+            This release provides the Linux AppImage for DocuVerse, a Q&A application for easy information retrieval from documents of interest.
+            
+            ## Installation
+            1. Download the AppImage
+            2. Make it executable: `chmod +x DocuVerse-${{ env.VERSION }}-x86_64.AppImage`
+            3. Run it: `./DocuVerse-${{ env.VERSION }}-x86_64.AppImage`
           draft: false
           prerelease: false
         env:
