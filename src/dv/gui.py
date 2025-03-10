@@ -72,7 +72,7 @@ class QAApplication:
     def __init__(self, root):
         """Initialize the GUI application."""
         self.root = root
-        self.root.title("FastInfo Q&A")
+        self.root.title("DocuVerse Q&A")
         self.root.geometry("1000x750")
         self.root.minsize(800, 600)
 
@@ -114,7 +114,7 @@ class QAApplication:
         # Show welcome message
         self.update_chat(
             "System",
-            "Welcome to FastInfo Q&A! Ask questions about your documents in the input box below.",
+            "Welcome to DocuVerse Q&A! Ask questions about your documents in the input box below.",
         )
 
         # Set focus to question entry
