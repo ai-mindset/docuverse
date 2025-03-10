@@ -82,7 +82,7 @@ jobs:
           ./appimagetool AppDir "DV-${{ env.VERSION }}-x86_64.AppImage"
       
       - name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: dv-linux
           path: DV-${{ env.VERSION }}-x86_64.AppImage
