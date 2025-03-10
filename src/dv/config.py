@@ -68,6 +68,8 @@ class Settings(BaseModel):
         }
     )
 
+    EXIT_KEYWORDS: list[str] = ["bye", "exit", "goodbye", "quit"]
+
 
 # %%
 class Document(TypedDict):

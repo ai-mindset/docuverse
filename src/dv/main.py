@@ -9,11 +9,17 @@ import argparse
 import os
 import sys
 from pathlib import Path
-from typing import NoReturn, Optional
+from typing import NoReturn
 
+from dv.cli import main as cli_main
 from dv.config import settings
 from dv.database import connect_to_db, process_all_documents
+from dv.gui import main as gui_main
 from dv.logger import setup_logging
+
+# Ensure EXIT_KEYWORDS is in settings
+if not hasattr(settings, "EXIT_KEYWORDS"):
+    settings.EXIT_KEYWORDS = ["bye", "exit", "goodbye", "quit"]
 
 # Set up logging
 logger = setup_logging(settings.log_level)
@@ -166,7 +172,14 @@ def parse_arguments() -> argparse.Namespace:
         help="Use light mode for GUI (ignored in CLI mode)",
     )
 
-    return parser.parse_args()
+    # Store args in settings for use throughout the application
+    args = parser.parse_args()
+
+    # Update settings with the parsed arguments
+    settings.temperature = args.temperature
+    settings.results = args.results
+
+    return args
 
 
 def exit_with_error(message: str, exit_code: int = 1) -> NoReturn:
@@ -182,23 +195,30 @@ def exit_with_error(message: str, exit_code: int = 1) -> NoReturn:
     sys.exit(exit_code)
 
 
-def run_cli(model: str, temperature: float, results: int) -> None:
+def cli_prompt_loop() -> int:
     """
-    Run the CLI interface.
+    Custom implementation of CLI prompt loop with exit keyword handling.
 
-    Args:
-        model: Name of the Ollama model to use.
-        temperature: Temperature for the LLM (0-1).
-        results: Number of documents to retrieve.
+    Returns:
+        int: Exit code (0 for success, non-zero for errors).
     """
     from dv.qa import create_qa_chain
 
-    # Create the QA chain
-    qa = create_qa_chain(model_name=model, temperature=temperature, k=results)
-
-    print(f"Q&A system initialized with model: {model}")
-    print("Type 'exit' to quit or 'reset' to start a new conversation")
+    print(f"Q&A system initialized with model: {settings.LLM_MODEL}")
+    print(
+        f"Type any of {settings.EXIT_KEYWORDS} to quit or 'reset' to start a new conversation"
+    )
     print("-" * 50)
+
+    # Create the QA chain
+    try:
+        qa = create_qa_chain(
+            model_name=settings.LLM_MODEL,
+            temperature=0.1,  # Default temperature
+            k=3,  # Default number of results
+        )
+    except Exception as e:
+        return exit_with_error(f"Failed to initialize QA system: {str(e)}")
 
     # Interactive loop
     while True:
@@ -206,10 +226,12 @@ def run_cli(model: str, temperature: float, results: int) -> None:
             # Get user input
             question = input("\nQuestion: ").strip()
 
-            # Check for exit command
-            if question.lower() in ("exit", "quit"):
+            # Check for exit keywords
+            if question.lower() in (
+                keyword.lower() for keyword in settings.EXIT_KEYWORDS
+            ):
                 print("Goodbye!")
-                break
+                return 0
 
             # Check for reset command
             if question.lower() == "reset":
@@ -227,34 +249,11 @@ def run_cli(model: str, temperature: float, results: int) -> None:
 
         except KeyboardInterrupt:
             print("\nGoodbye!")
-            break
+            return 0
         except Exception as e:
             logger.error(f"Error in CLI: {str(e)}")
             print(f"An error occurred: {str(e)}")
-
-
-def run_gui(model: str, light_mode: bool) -> None:
-    """
-    Run the GUI interface.
-
-    Args:
-        model: Name of the Ollama model to use.
-        light_mode: Whether to use light mode instead of dark mode.
-    """
-    import customtkinter as ctk
-
-    from dv.gui import QAApplication
-
-    # Update model in settings
-    settings.LLM_MODEL = model
-
-    # Set appearance mode
-    ctk.set_appearance_mode("light" if light_mode else "dark")
-
-    # Create and run the application
-    root = ctk.CTk()
-    app = QAApplication(root)
-    root.mainloop()
+            # Continue the loop rather than exiting on error
 
 
 def main() -> int:
@@ -299,9 +298,15 @@ def main() -> int:
     # Launch the appropriate interface
     try:
         if args.cli:
-            run_cli(model=args.model, temperature=args.temperature, results=args.results)
+            # Use our custom CLI implementation that handles exit keywords properly
+            return cli_prompt_loop()
         else:
-            run_gui(model=args.model, light_mode=args.light_mode)
+            # Convert our args to the format expected by GUI
+            gui_args = argparse.Namespace(
+                model=args.model,
+                light_mode=args.light_mode,
+            )
+            gui_main(gui_args)
 
         return 0
 
