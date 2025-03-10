@@ -1,0 +1,289 @@
+name: Build Linux AppImage
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    tags:
+      - 'v*'  # Also run when a tag is pushed that starts with 'v'
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history and tags
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+      
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fuse libfuse2 imagemagick
+          wget -O appimagetool "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
+          chmod +x appimagetool
+      
+      - name: Create virtual environment and install dependencies
+        run: |
+          uv venv
+          source .venv/bin/activate
+          uv pip install -e .
+          
+          # Install specific PyInstaller version compatible with Python 3.13
+          uv pip install "pyinstaller>=6.1.0" toml
+          
+          # Create necessary directories
+          mkdir -p docs db prompts
+      
+      - name: Extract version from pyproject.toml and verify environment
+        id: get_version
+        run: |
+          source .venv/bin/activate
+          VERSION=$(python -c "import toml; print(toml.load('pyproject.toml')['project']['version'])")
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "Version: $VERSION"
+          
+          # Debug: Check current git ref
+          echo "Current GitHub ref: $GITHUB_REF"
+          
+          # Verify Python configuration and available standard libraries
+          echo "Python version information:"
+          python --version
+          
+          echo "Checking critical modules availability:"
+          python -c "import glob; print('glob module is available')"
+          python -c "import pathlib; print('pathlib module is available')"
+          python -c "import pydantic; print(f'pydantic version: {pydantic.__version__}')"
+          python -c "import PyInstaller; print(f'PyInstaller version: {PyInstaller.__version__}')"
+      
+      - name: Create PyInstaller spec file
+        run: |
+          source .venv/bin/activate
+          # Create any missing directories that might be required
+          mkdir -p prompts
+          touch prompts/system_prompt.md
+          
+          cat > dv.spec << EOF
+          # -*- mode: python ; coding: utf-8 -*-
+          import sys
+          import glob
+          from PyInstaller.utils.hooks import collect_all
+
+          block_cipher = None
+          
+          # Collect pydantic with all its dependencies
+          pydantic_datas, pydantic_binaries, pydantic_hiddenimports = collect_all('pydantic')
+          langchain_datas, langchain_binaries, langchain_hiddenimports = collect_all('langchain_ollama')
+          langchain_core_datas, langchain_core_binaries, langchain_core_hiddenimports = collect_all('langchain_core')
+          
+          # Add standard library modules that might be missed
+          std_lib_imports = ['glob', 'pathlib', 'collections', 'collections.abc', 'os', 're', 'sys', 
+                             'sqlite3', 'datetime', 'logging', 'functools', 'typing']
+
+          a = Analysis(
+              ['src/dv/main.py'],
+              pathex=[],
+              binaries=[*pydantic_binaries, *langchain_binaries, *langchain_core_binaries],
+              datas=[
+                  ('prompts', 'prompts'),
+                  ('docs', 'docs'),
+                  ('db', 'db'),
+                  *pydantic_datas, 
+                  *langchain_datas,
+                  *langchain_core_datas
+              ],
+              hiddenimports=[
+                  *std_lib_imports,
+                  *pydantic_hiddenimports,
+                  *langchain_hiddenimports,
+                  *langchain_core_hiddenimports,
+                  'pydantic.deprecated.decorator',
+                  'pydantic.deprecated',
+                  'pydantic._internal._model_construction',
+                  'pydantic.version',
+                  'langchain_community.vectorstores',
+                  'langchain_community.embeddings',
+                  'numpy',
+                  'ollama',
+              ],
+              hookspath=[],
+              hooksconfig={},
+              runtime_hooks=[],
+              excludes=[],
+              win_no_prefer_redirects=False,
+              win_private_assemblies=False,
+              cipher=block_cipher,
+              noarchive=False,
+          )
+          
+          pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+          
+          exe = EXE(
+              pyz,
+              a.scripts,
+              a.binaries,
+              a.zipfiles,
+              a.datas,
+              [],
+              name='dv-${{ env.VERSION }}-linux',
+              debug=False,
+              bootloader_ignore_signals=False,
+              strip=False,
+              upx=True,
+              upx_exclude=[],
+              runtime_tmpdir=None,
+              console=True,
+              disable_windowed_traceback=False,
+              argv_emulation=False,
+              target_arch=None,
+              codesign_identity=None,
+              entitlements_file=None,
+          )
+          EOF
+
+      - name: Build with PyInstaller
+        run: |
+          source .venv/bin/activate
+          # Build with verbose output and clean build directory
+          python -m PyInstaller --clean dv.spec
+      
+      - name: Verify built binary
+        run: |
+          # Check if binary was created successfully
+          if [ ! -f "dist/dv-${{ env.VERSION }}-linux" ]; then
+            echo "ERROR: PyInstaller failed to create the binary!"
+            exit 1
+          fi
+          
+          # Check some basic properties of the binary
+          file "dist/dv-${{ env.VERSION }}-linux"
+          
+          # Run ldd to check library dependencies
+          ldd "dist/dv-${{ env.VERSION }}-linux" || true
+          
+      - name: Create AppDir structure
+        run: |
+          mkdir -p AppDir/usr/bin
+          mkdir -p AppDir/usr/share/applications
+          mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
+          mkdir -p AppDir/usr/share/dv
+          mkdir -p AppDir/usr/share/dv/db
+          mkdir -p AppDir/usr/share/dv/docs
+          mkdir -p AppDir/usr/share/dv/prompts
+          
+          # Copy the binary
+          cp dist/dv-${{ env.VERSION }}-linux AppDir/usr/bin/dv
+          chmod +x AppDir/usr/bin/dv
+          
+          # Create desktop file
+          cat > AppDir/usr/share/applications/dv.desktop << EOF
+          [Desktop Entry]
+          Name=dv
+          Comment=Q&A app for easy information retrieval from documents
+          Exec=dv
+          Icon=dv
+          Terminal=false
+          Type=Application
+          Categories=Utility;Education;Office;
+          EOF
+          
+          # Create AppRun file (this is critical for AppImage functionality)
+          cat > AppDir/AppRun << EOF
+          #!/bin/bash
+          SELF=\$(readlink -f "\$0")
+          HERE=\${SELF%/*}
+          
+          # Set up environment variables
+          export PATH="\${HERE}/usr/bin:\${PATH}"
+          export DOCUVERSE_HOME="\${HERE}/usr/share/dv"
+          export PYTHONPATH="\${HERE}/usr/share/dv:\${PYTHONPATH}"
+          
+          # Link to app directories
+          export DV_DOCS_DIR="\${HERE}/usr/share/dv/docs"
+          export DV_DB_PATH="\${HERE}/usr/share/dv/db/books.db"
+          export DV_PROMPTS_DIR="\${HERE}/usr/share/dv/prompts"
+          
+          # Create directories if they don't exist
+          mkdir -p "\${DV_DOCS_DIR}" "\${HERE}/usr/share/dv/db" "\${DV_PROMPTS_DIR}"
+          
+          # Add a system prompt file if it doesn't exist
+          if [ ! -f "\${DV_PROMPTS_DIR}/system_prompt.md" ]; then
+            echo "You are a helpful assistant that provides information from documents." > "\${DV_PROMPTS_DIR}/system_prompt.md"
+          fi
+          
+          # Execute the application with environment variables
+          "\${HERE}/usr/bin/dv" "\$@"
+          EOF
+          
+          # Make AppRun executable
+          chmod +x AppDir/AppRun
+          
+          # Create a simple icon for the application
+          convert -size 256x256 xc:transparent -fill blue -draw "circle 128,128 128,64" -font Arial -fill black -pointsize 24 -gravity center -annotate 0 "DV" AppDir/dv.png
+          cp AppDir/dv.png AppDir/usr/share/icons/hicolor/256x256/apps/
+          
+          # Create system prompt
+          mkdir -p AppDir/usr/share/dv/prompts
+          echo "You are a helpful assistant that provides information from documents." > AppDir/usr/share/dv/prompts/system_prompt.md
+          
+          # Copy desktop file to root as required by AppImage specification
+          cp AppDir/usr/share/applications/dv.desktop AppDir/dv.desktop
+          
+          # Copy icon to root as required by AppImage specification
+          cp AppDir/dv.png AppDir/.DirIcon
+      
+      - name: Build AppImage
+        run: |
+          # Set the architecture explicitly
+          ARCH=x86_64 ./appimagetool AppDir "dv-${{ env.VERSION }}-x86_64.AppImage"
+      
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dv-linux
+          path: dv-${{ env.VERSION }}-x86_64.AppImage
+          
+      - name: Check if running on tag
+        id: check-tag
+        run: |
+          if [[ $GITHUB_REF == refs/tags/v* ]]; then
+            echo "IS_TAG=true" >> $GITHUB_ENV
+            RELEASE_VERSION=${GITHUB_REF#refs/tags/v}
+            echo "RELEASE_VERSION=$RELEASE_VERSION" >> $GITHUB_ENV
+            echo "Running on tag: $GITHUB_REF, version: $RELEASE_VERSION"
+          else
+            echo "IS_TAG=false" >> $GITHUB_ENV
+            echo "Not running on a tag: $GITHUB_REF"
+          fi
+          
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        if: env.IS_TAG == 'true'
+        with:
+          files: dv-${{ env.VERSION }}-x86_64.AppImage
+          name: dv ${{ env.VERSION }}
+          body: |
+            dv Q&A App Release v${{ env.VERSION }}
+            
+            This release provides the Linux AppImage for dv, a Q&A application for easy information retrieval from documents of interest.
+            
+            ## Installation
+            1. Download the AppImage
+            2. Make it executable: `chmod +x dv-${{ env.VERSION }}-x86_64.AppImage`
+            3. Run it: `./dv-${{ env.VERSION }}-x86_64.AppImage`
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

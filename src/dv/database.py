@@ -7,7 +7,6 @@ import re
 import sqlite3
 from pathlib import Path
 
-import ipdb
 import numpy as np
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 

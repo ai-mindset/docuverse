@@ -4,7 +4,6 @@
 import logging
 import sqlite3
 
-import ipdb
 import numpy as np
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
