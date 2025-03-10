@@ -10,7 +10,6 @@ from datetime import datetime
 from os import getenv, path
 from typing import Any, TypedDict
 
-import ipdb
 from dotenv import load_dotenv
 from langchain_ollama import OllamaEmbeddings
 from ollama import Client

@@ -2,7 +2,6 @@
 
 from typing import Any
 
-import ipdb
 from langchain_core.documents import Document
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.output_parsers import StrOutputParser
@@ -209,6 +208,5 @@ if __name__ == "__main__":
     q2 = questions["q2"]
     answer2 = qa.query(question=q2)
     retrieved_docs = qa.get_context_for_query(query=q2)
-    ipdb.set_trace()
     print(f"Q: {questions['q2']}")
     print(f"A: {answer2}")

@@ -10,7 +10,6 @@ from pathlib import Path
 from tkinter import messagebox
 
 import customtkinter as ctk
-import ipdb
 
 # %%
 from dv.config import settings
