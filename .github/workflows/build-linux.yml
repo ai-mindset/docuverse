@@ -40,7 +40,10 @@ jobs:
           uv venv
           source .venv/bin/activate
           uv pip install -e .
-          uv pip install pyinstaller toml
+          uv pip install "pyinstaller<6.0.0" toml
+          
+          # Create necessary directories
+          mkdir -p docs db prompts
       
       - name: Extract version from pyproject.toml
         id: get_version
@@ -53,29 +56,97 @@ jobs:
           # Debug: Check current git ref
           echo "Current GitHub ref: $GITHUB_REF"
       
+      - name: Create PyInstaller spec file
+        run: |
+          source .venv/bin/activate
+          # Create any missing directories that might be required
+          mkdir -p prompts
+          touch prompts/system_prompt.md
+          
+          cat > dv.spec << EOF
+          # -*- mode: python ; coding: utf-8 -*-
+
+          block_cipher = None
+
+          a = Analysis(
+              ['src/dv/main.py'],
+              pathex=[],
+              binaries=[],
+              datas=[
+                  ('prompts', 'prompts'),
+                  ('docs', 'docs'),
+              ],
+              hiddenimports=[
+                  'pydantic.deprecated.decorator',
+                  'pydantic.deprecated',
+                  'pydantic.version',
+                  'langchain_community.vectorstores',
+                  'langchain_community.embeddings',
+                  'langchain.schema',
+                  'langchain.embeddings',
+                  'langchain.vectorstores',
+              ],
+              hookspath=[],
+              hooksconfig={},
+              runtime_hooks=[],
+              excludes=[],
+              win_no_prefer_redirects=False,
+              win_private_assemblies=False,
+              cipher=block_cipher,
+              noarchive=False,
+          )
+          
+          pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+          
+          exe = EXE(
+              pyz,
+              a.scripts,
+              a.binaries,
+              a.zipfiles,
+              a.datas,
+              [],
+              name='dv-${{ env.VERSION }}-linux',
+              debug=False,
+              bootloader_ignore_signals=False,
+              strip=False,
+              upx=True,
+              upx_exclude=[],
+              runtime_tmpdir=None,
+              console=True,
+              disable_windowed_traceback=False,
+              argv_emulation=False,
+              target_arch=None,
+              codesign_identity=None,
+              entitlements_file=None,
+          )
+          EOF
+
       - name: Build with PyInstaller
         run: |
           source .venv/bin/activate
-          pyinstaller --onefile --name="dv-${{ env.VERSION }}-linux" src/dv/main.py
+          pyinstaller dv.spec
       
       - name: Create AppDir structure
         run: |
           mkdir -p AppDir/usr/bin
           mkdir -p AppDir/usr/share/applications
           mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
-          mkdir -p AppDir/usr/share/docuverse
+          mkdir -p AppDir/usr/share/dv
+          mkdir -p AppDir/usr/share/dv/db
+          mkdir -p AppDir/usr/share/dv/docs
+          mkdir -p AppDir/usr/share/dv/prompts
           
           # Copy the binary
           cp dist/dv-${{ env.VERSION }}-linux AppDir/usr/bin/dv
           chmod +x AppDir/usr/bin/dv
           
           # Create desktop file
-          cat > AppDir/usr/share/applications/docuverse.desktop << EOF
+          cat > AppDir/usr/share/applications/dv.desktop << EOF
           [Desktop Entry]
           Name=DocuVerse
           Comment=Q&A app for easy information retrieval from documents
           Exec=dv
-          Icon=docuverse
+          Icon=dv
           Terminal=false
           Type=Application
           Categories=Utility;Education;Office;
@@ -86,11 +157,26 @@ jobs:
           #!/bin/bash
           SELF=\$(readlink -f "\$0")
           HERE=\${SELF%/*}
-          export PATH="\${HERE}/usr/bin:\${PATH}"
-          # Add additional environment variables if needed
-          export DOCUVERSE_HOME="\${HERE}/usr/share/docuverse"
           
-          # Execute the application
+          # Set up environment variables
+          export PATH="\${HERE}/usr/bin:\${PATH}"
+          export DOCUVERSE_HOME="\${HERE}/usr/share/dv"
+          export PYTHONPATH="\${HERE}/usr/share/dv:\${PYTHONPATH}"
+          
+          # Link to app directories
+          export DV_DOCS_DIR="\${HERE}/usr/share/dv/docs"
+          export DV_DB_PATH="\${HERE}/usr/share/dv/db/books.db"
+          export DV_PROMPTS_DIR="\${HERE}/usr/share/dv/prompts"
+          
+          # Create directories if they don't exist
+          mkdir -p "\${DV_DOCS_DIR}" "\${HERE}/usr/share/dv/db" "\${DV_PROMPTS_DIR}"
+          
+          # Add a system prompt file if it doesn't exist
+          if [ ! -f "\${DV_PROMPTS_DIR}/system_prompt.md" ]; then
+            echo "You are a helpful assistant that provides information from documents." > "\${DV_PROMPTS_DIR}/system_prompt.md"
+          fi
+          
+          # Execute the application with environment variables
           "\${HERE}/usr/bin/dv" "\$@"
           EOF
           
@@ -98,14 +184,18 @@ jobs:
           chmod +x AppDir/AppRun
           
           # Create a simple icon for the application
-          convert -size 256x256 xc:transparent -fill blue -draw "circle 128,128 128,64" -font Arial -fill black -pointsize 24 -gravity center -annotate 0 "DV" AppDir/docuverse.png
-          cp AppDir/docuverse.png AppDir/usr/share/icons/hicolor/256x256/apps/
+          convert -size 256x256 xc:transparent -fill blue -draw "circle 128,128 128,64" -font Arial -fill black -pointsize 24 -gravity center -annotate 0 "DV" AppDir/dv.png
+          cp AppDir/dv.png AppDir/usr/share/icons/hicolor/256x256/apps/
+          
+          # Create system prompt
+          mkdir -p AppDir/usr/share/dv/prompts
+          echo "You are a helpful assistant that provides information from documents." > AppDir/usr/share/dv/prompts/system_prompt.md
           
           # Copy desktop file to root as required by AppImage specification
-          cp AppDir/usr/share/applications/docuverse.desktop AppDir/docuverse.desktop
+          cp AppDir/usr/share/applications/dv.desktop AppDir/dv.desktop
           
           # Copy icon to root as required by AppImage specification
-          cp AppDir/docuverse.png AppDir/.DirIcon
+          cp AppDir/dv.png AppDir/.DirIcon
       
       - name: Build AppImage
         run: |
@@ -115,7 +205,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: docuverse-linux
+          name: dv-linux
           path: DocuVerse-${{ env.VERSION }}-x86_64.AppImage
           
       - name: Check if running on tag
