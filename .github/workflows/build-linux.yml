@@ -51,7 +51,7 @@ jobs:
           uv pip install "pyinstaller>=6.1.0" toml
           
           # Create necessary directories
-          mkdir -p docs db prompts
+          mkdir -p docs db
       
       - name: Extract version from pyproject.toml and verify environment
         id: get_version
@@ -73,21 +73,38 @@ jobs:
           python -c "import pathlib; print('pathlib module is available')"
           python -c "import pydantic; print(f'pydantic version: {pydantic.__version__}')"
           python -c "import PyInstaller; print(f'PyInstaller version: {PyInstaller.__version__}')"
+          
+          # Debug: Show the contents of the prompts directory
+          echo "Contents of prompts directory:"
+          ls -la prompts/
       
       - name: Create PyInstaller spec file
         run: |
           source .venv/bin/activate
-          # Create any missing directories that might be required
-          mkdir -p prompts
-          touch prompts/system_prompt.md
           
           cat > dv.spec << EOF
           # -*- mode: python ; coding: utf-8 -*-
           import sys
           import glob
-          from PyInstaller.utils.hooks import collect_all
+          import os
+          from PyInstaller.utils.hooks import collect_all, copy_metadata
 
           block_cipher = None
+          
+          # Get the absolute path to the directories
+          base_dir = os.path.abspath(os.path.dirname(__file__))
+          prompts_dir = os.path.join(base_dir, 'prompts')
+          docs_dir = os.path.join(base_dir, 'docs')
+          db_dir = os.path.join(base_dir, 'db')
+          
+          # Ensure the docs and db directories exist
+          for d in [docs_dir, db_dir]:
+              if not os.path.exists(d):
+                  os.makedirs(d)
+          
+          # Print debugging info
+          print(f"Prompts directory: {prompts_dir}")
+          print(f"Contents of prompts directory: {os.listdir(prompts_dir)}")
           
           # Collect pydantic with all its dependencies
           pydantic_datas, pydantic_binaries, pydantic_hiddenimports = collect_all('pydantic')
@@ -98,18 +115,21 @@ jobs:
           std_lib_imports = ['glob', 'pathlib', 'collections', 'collections.abc', 'os', 're', 'sys', 
                              'sqlite3', 'datetime', 'logging', 'functools', 'typing']
 
+          # Define datas with explicit paths
+          datas = [
+              (prompts_dir, 'prompts'),
+              (docs_dir, 'docs'),
+              (db_dir, 'db'),
+          ]
+          datas.extend(pydantic_datas)
+          datas.extend(langchain_datas)
+          datas.extend(langchain_core_datas)
+          
           a = Analysis(
               ['src/dv/main.py'],
-              pathex=[],
+              pathex=[base_dir],
               binaries=[*pydantic_binaries, *langchain_binaries, *langchain_core_binaries],
-              datas=[
-                  ('prompts', 'prompts'),
-                  ('docs', 'docs'),
-                  ('db', 'db'),
-                  *pydantic_datas, 
-                  *langchain_datas,
-                  *langchain_core_datas
-              ],
+              datas=datas,
               hiddenimports=[
                   *std_lib_imports,
                   *pydantic_hiddenimports,
@@ -162,8 +182,57 @@ jobs:
       - name: Build with PyInstaller
         run: |
           source .venv/bin/activate
-          # Build with verbose output and clean build directory
-          python -m PyInstaller --clean dv.spec
+          # Build with debug log level and clean build directory
+          python -m PyInstaller --clean --log-level DEBUG dv.spec
+          
+          # Check if prompts directory was included in the build
+          echo "Checking for prompts directory in dist:"
+          find dist -name "prompts" -type d || echo "prompts directory not found in dist"
+      
+      - name: Create runtime configuration file
+        run: |
+          # Create a .env file to set environment variables for the standalone executable
+          cat > runtime_config.py << EOF
+          import os
+          import sys
+
+          # Get the directory where the executable is located
+          if getattr(sys, 'frozen', False):
+              # We're running in a PyInstaller bundle
+              base_dir = sys._MEIPASS
+          else:
+              # We're running in a normal Python environment
+              base_dir = os.path.dirname(os.path.abspath(__file__))
+
+          # Set critical environment variables for the app to find its resources
+          os.environ['PROMPTS_DIR'] = os.path.join(base_dir, 'prompts')
+          os.environ['DOCS_DIR'] = os.path.join(base_dir, 'docs')
+          os.environ['SQLITE_DB_PATH'] = os.path.join(base_dir, 'db', 'books.db')
+
+          # Debug info
+          print(f"Base directory: {base_dir}")
+          print(f"Prompts directory: {os.environ['PROMPTS_DIR']}")
+          print(f"Docs directory: {os.environ['DOCS_DIR']}")
+          print(f"SQLite DB path: {os.environ['SQLITE_DB_PATH']}")
+          
+          # Check if prompts directory exists and has files
+          if os.path.exists(os.environ['PROMPTS_DIR']):
+              print(f"Prompts directory exists and contains: {os.listdir(os.environ['PROMPTS_DIR'])}")
+          else:
+              print(f"WARNING: Prompts directory does not exist")
+          EOF
+          
+          # Ensure it gets included with the source files for PyInstaller to use
+          cp runtime_config.py src/dv/
+      
+      - name: Patch main.py to use runtime_config
+        run: |
+          # Add runtime_config import to main.py to ensure proper paths
+          sed -i '1s/^/import runtime_config  # Configure environment paths before other imports\n/' src/dv/main.py
+          
+          # Rebuild with patched main.py
+          source .venv/bin/activate
+          python -m PyInstaller --clean --log-level DEBUG dv.spec
       
       - name: Verify built binary
         run: |
@@ -179,6 +248,10 @@ jobs:
           # Run ldd to check library dependencies
           ldd "dist/dv-${{ env.VERSION }}-linux" || true
           
+          # Check contents of the binary
+          echo "Checking for prompts directory in binary:"
+          strings "dist/dv-${{ env.VERSION }}-linux" | grep -i prompts
+          
       - name: Create AppDir structure
         run: |
           mkdir -p AppDir/usr/bin
@@ -192,6 +265,13 @@ jobs:
           # Copy the binary
           cp dist/dv-${{ env.VERSION }}-linux AppDir/usr/bin/dv
           chmod +x AppDir/usr/bin/dv
+          
+          # Copy the existing prompts directory content
+          cp -r prompts/* AppDir/usr/share/dv/prompts/
+          
+          # List copied prompts for verification
+          echo "Copied prompts to AppDir:"
+          ls -la AppDir/usr/share/dv/prompts/
           
           # Create desktop file
           cat > AppDir/usr/share/applications/dv.desktop << EOF
@@ -213,21 +293,32 @@ jobs:
           
           # Set up environment variables
           export PATH="\${HERE}/usr/bin:\${PATH}"
-          export DOCUVERSE_HOME="\${HERE}/usr/share/dv"
-          export PYTHONPATH="\${HERE}/usr/share/dv:\${PYTHONPATH}"
           
-          # Link to app directories
-          export DV_DOCS_DIR="\${HERE}/usr/share/dv/docs"
-          export DV_DB_PATH="\${HERE}/usr/share/dv/db/books.db"
-          export DV_PROMPTS_DIR="\${HERE}/usr/share/dv/prompts"
+          # Set environment variables for the application to find its resources
+          # These override any built-in paths in the PyInstaller bundle
+          export PROMPTS_DIR="\${HERE}/usr/share/dv/prompts"
+          export DOCS_DIR="\${HERE}/usr/share/dv/docs"
+          export SQLITE_DB_PATH="\${HERE}/usr/share/dv/db/books.db"
           
           # Create directories if they don't exist
-          mkdir -p "\${DV_DOCS_DIR}" "\${HERE}/usr/share/dv/db" "\${DV_PROMPTS_DIR}"
+          mkdir -p "\${PROMPTS_DIR}" "\${DOCS_DIR}" "\${HERE}/usr/share/dv/db"
           
-          # Add a system prompt file if it doesn't exist
-          if [ ! -f "\${DV_PROMPTS_DIR}/system_prompt.md" ]; then
-            echo "You are a helpful assistant that provides information from documents." > "\${DV_PROMPTS_DIR}/system_prompt.md"
+          # Make sure the prompts directory exists
+          if [ ! -d "\${PROMPTS_DIR}" ]; then
+            echo "Warning: Prompts directory not found. Creating directory structure..."
+            mkdir -p "\${PROMPTS_DIR}"
+            # Copy the included prompts from the PyInstaller bundle as fallback
+            if [ -d "\${HERE}/usr/bin/_internal/prompts" ]; then
+              cp -r "\${HERE}/usr/bin/_internal/prompts/"* "\${PROMPTS_DIR}/"
+            fi
           fi
+          
+          # Debug info
+          echo "Running dv from \${HERE}/usr/bin/dv"
+          echo "PROMPTS_DIR=\${PROMPTS_DIR}"
+          echo "DOCS_DIR=\${DOCS_DIR}"
+          echo "SQLITE_DB_PATH=\${SQLITE_DB_PATH}"
+          echo "Prompts directory contains: \$(ls -la \${PROMPTS_DIR})"
           
           # Execute the application with environment variables
           "\${HERE}/usr/bin/dv" "\$@"
@@ -239,10 +330,6 @@ jobs:
           # Create a simple icon for the application
           convert -size 256x256 xc:transparent -fill blue -draw "circle 128,128 128,64" -font Arial -fill black -pointsize 24 -gravity center -annotate 0 "DV" AppDir/dv.png
           cp AppDir/dv.png AppDir/usr/share/icons/hicolor/256x256/apps/
-          
-          # Create system prompt
-          mkdir -p AppDir/usr/share/dv/prompts
-          echo "You are a helpful assistant that provides information from documents." > AppDir/usr/share/dv/prompts/system_prompt.md
           
           # Copy desktop file to root as required by AppImage specification
           cp AppDir/usr/share/applications/dv.desktop AppDir/dv.desktop
@@ -328,5 +415,3 @@ jobs:
           prerelease: ${{ env.PRERELEASE == 'true' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-
