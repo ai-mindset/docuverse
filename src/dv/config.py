@@ -43,7 +43,7 @@ class Settings(BaseModel):
     SQLITE_DB_PATH: str = Field(default="db/books.db")
     DOCS_DIR: str = Field(default="docs")
     CLIENT: Client = Field(default=Client(host="http://localhost:11434"))
-    LLM_MODEL: str = Field(default="mistral-small:24b-instruct-2501-q4_K_M")
+    LLM_MODEL: str = Field(default="mistral")
 
     PROMPTS_DIR: str = Field(default="prompts/")
 
