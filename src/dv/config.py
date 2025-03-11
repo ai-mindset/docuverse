@@ -6,9 +6,10 @@
 # %%
 import logging
 import os
+from collections.abc import Mapping
 from datetime import datetime
 from os import getenv, path
-from typing import Any, TypedDict
+from typing import Any, Literal, TypedDict
 
 from dotenv import load_dotenv
 from langchain_ollama import OllamaEmbeddings
@@ -60,13 +61,12 @@ class Settings(BaseModel):
                     sys_prompt_content += file.read() + "\n\n"
         return sys_prompt_content.strip()
 
-    GUI_FONT: dict[str, int] = Field(
+    GUI_FONT: Mapping[str, int | str] = Field(
         default={
             "size": 18,
             "weight": "bold",
         }
     )
-
     EXIT_KEYWORDS: list[str] = ["bye", "exit", "goodbye", "quit"]
 
 

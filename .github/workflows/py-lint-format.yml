@@ -1,0 +1,59 @@
+name: Python Linting and Formatting
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  lint-and-format:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+      
+      - name: Create virtual environment and install dependencies
+        run: |
+          uv venv
+          source .venv/bin/activate
+          uv pip install ruff
+      
+      - name: Run Ruff linter
+        id: ruff-lint
+        run: |
+          source .venv/bin/activate
+          echo "Running Ruff linter..."
+          ruff check src/dv
+      
+      - name: Check Ruff formatting
+        id: ruff-format-check
+        run: |
+          source .venv/bin/activate
+          echo "Checking code formatting..."
+          ruff format --check src/dv
+      
+      - name: Format code if on pull request
+        if: github.event_name == 'pull_request'
+        run: |
+          source .venv/bin/activate
+          echo "Applying Ruff formatting..."
+          ruff format src/dv
+      
+      - name: Commit changes if formatting was applied
+        if: github.event_name == 'pull_request'
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git diff --quiet || (git add src/dv && git commit -m "Apply Ruff formatting" && git push)

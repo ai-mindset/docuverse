@@ -6,6 +6,7 @@ import os
 import sys
 import threading
 import tkinter as tk
+from collections.abc import Mapping
 from pathlib import Path
 from tkinter import messagebox
 
@@ -22,8 +23,9 @@ if not hasattr(settings, "GUI_FONT"):
     settings.GUI_FONT = {"size": 16, "weight": "bold"}
 
 # Extract font settings
-font_size = settings.GUI_FONT.get("size", 16)
-font_weight = settings.GUI_FONT.get("weight", "bold")
+font_size = settings.GUI_FONT["size"]
+font_weight = settings.GUI_FONT["weight"]
+
 
 # %%
 logger = setup_logging(settings.log_level)
