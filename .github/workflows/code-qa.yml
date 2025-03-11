@@ -32,6 +32,8 @@ jobs:
           uv pip install pyright ruff
       
       - name: Run Pyright type checker
+        id: pyright
+        continue-on-error: true
         run: |
           source .venv/bin/activate
           echo "::group::Pyright Type Checking"
@@ -39,6 +41,8 @@ jobs:
           echo "::endgroup::"
       
       - name: Run Ruff linter
+        id: ruff-lint
+        continue-on-error: true
         run: |
           source .venv/bin/activate
           echo "::group::Ruff Linting"
@@ -46,6 +50,8 @@ jobs:
           echo "::endgroup::"
       
       - name: Check Ruff formatting
+        id: ruff-format-check
+        continue-on-error: true
         run: |
           source .venv/bin/activate
           echo "::group::Ruff Format Check"
@@ -64,3 +70,16 @@ jobs:
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git diff --quiet || (git add src/dv && git commit -m "Apply ruff formatting" && git push)
+      
+      - name: Report status
+        run: |
+          echo "::group::Check Results Summary"
+          echo "Pyright check status: ${{ steps.pyright.outcome }}"
+          echo "Ruff lint status: ${{ steps.ruff-lint.outcome }}"
+          echo "Ruff format check status: ${{ steps.ruff-format-check.outcome }}"
+          echo "::endgroup::"
+          
+          if [[ "${{ steps.pyright.outcome }}" == "failure" || "${{ steps.ruff-lint.outcome }}" == "failure" || "${{ steps.ruff-format-check.outcome }}" == "failure" ]]; then
+            echo "One or more checks failed. Please review the logs for details."
+            exit 1
+          fi
