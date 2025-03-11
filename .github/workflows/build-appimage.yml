@@ -1,0 +1,494 @@
+name: Build Linux AppImage
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  packages: read
+  
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history and tags
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+      
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fuse libfuse2 imagemagick
+          wget -O appimagetool "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
+          chmod +x appimagetool
+      
+      - name: Create virtual environment and install dependencies
+        run: |
+          uv venv
+          source .venv/bin/activate
+          uv pip install -e .
+          
+          # Install specific PyInstaller version compatible with Python 3.13
+          uv pip install "pyinstaller>=6.1.0" toml
+          
+          # Create necessary directories if they don't exist
+          mkdir -p docs db
+          
+          # Verify prompts directory exists
+          if [ ! -d "prompts" ]; then
+            echo "ERROR: 'prompts' directory not found in the repository"
+            exit 1
+          fi
+          
+          echo "Listing contents of the prompts directory:"
+          ls -la prompts/
+      
+      - name: Create config_overrides.py file to handle paths
+        run: |
+          # Create a file to patch the config module at runtime
+          cat > src/dv/config_overrides.py << EOF
+          """Runtime configuration overrides for packaged application."""
+          import os
+          import sys
+
+          def setup_runtime_paths():
+              """Configure paths for the packaged application."""
+              # Determine base directory based on whether we're running in PyInstaller or not
+              if getattr(sys, 'frozen', False):
+                  # Running in a PyInstaller bundle
+                  base_dir = sys._MEIPASS
+              else:
+                  # Running in a normal Python environment
+                  base_dir = os.path.dirname(os.path.abspath(__file__))
+              
+              # Set environment variables for critical paths
+              os.environ['DV_PROMPTS_DIR'] = os.path.join(base_dir, 'prompts')
+              os.environ['DV_DOCS_DIR'] = os.path.join(base_dir, 'docs')
+              os.environ['DV_DB_PATH'] = os.path.join(base_dir, 'db', 'books.db')
+              
+              print(f"Runtime paths configured:")
+              print(f"  Prompts: {os.environ['DV_PROMPTS_DIR']}")
+              print(f"  Docs: {os.environ['DV_DOCS_DIR']}")
+              print(f"  DB: {os.environ['DV_DB_PATH']}")
+              
+              # Verify the prompts directory exists in the bundle
+              if os.path.exists(os.environ['DV_PROMPTS_DIR']):
+                  print(f"Prompts directory found with contents: {os.listdir(os.environ['DV_PROMPTS_DIR'])}")
+              else:
+                  print(f"WARNING: Prompts directory not found at {os.environ['DV_PROMPTS_DIR']}")
+          
+          # Setup paths immediately when this module is imported
+          setup_runtime_paths()
+          EOF
+      
+      - name: Patch config.py to use environment variables
+        run: |
+          # Create a patch for config.py to use environment variables
+          cat > config_patch.py << EOF
+          import os
+
+          # Original code snippet to be replaced
+          original = '''    PROMPTS_DIR: str = Field(default="prompts/")
+
+    @computed_field
+    @property
+    def SYS_PROMPT(self) -> str:  # noqa: N802
+        sys_prompt_content = ""
+        for filename in os.listdir(self.PROMPTS_DIR):
+            if filename.startswith(("sys_", "system_")) and (
+                filename.endswith(".md") or filename.endswith(".txt")
+            ):
+                with open(
+                    os.path.join(self.PROMPTS_DIR, filename), encoding="utf-8"
+                ) as file:
+                    sys_prompt_content += file.read() + "\n\n"
+        return sys_prompt_content.strip()'''
+
+          # New code with environment variable support
+          replacement = '''    PROMPTS_DIR: str = Field(default=os.environ.get("DV_PROMPTS_DIR", "prompts/"))
+    DOCS_DIR: str = Field(default=os.environ.get("DV_DOCS_DIR", "docs"))
+    SQLITE_DB_PATH: str = Field(default=os.environ.get("DV_DB_PATH", "db/books.db"))
+
+    @computed_field
+    @property
+    def SYS_PROMPT(self) -> str:  # noqa: N802
+        sys_prompt_content = ""
+        try:
+            if os.path.exists(self.PROMPTS_DIR):
+                for filename in os.listdir(self.PROMPTS_DIR):
+                    if filename.startswith(("sys_", "system_")) and (
+                        filename.endswith(".md") or filename.endswith(".txt")
+                    ):
+                        try:
+                            with open(
+                                os.path.join(self.PROMPTS_DIR, filename), encoding="utf-8"
+                            ) as file:
+                                sys_prompt_content += file.read() + "\\n\\n"
+                        except Exception as e:
+                            print(f"Error reading prompt file {filename}: {e}")
+            else:
+                print(f"Prompts directory not found at {self.PROMPTS_DIR}")
+                fallback_prompt = "You are a helpful AI assistant that provides information from documents."
+                print(f"Using fallback prompt: {fallback_prompt}")
+                return fallback_prompt
+        except Exception as e:
+            print(f"Error loading system prompts: {e}")
+            return "You are a helpful AI assistant that provides information from documents."
+        return sys_prompt_content.strip()'''
+
+          # Read the config.py file
+          with open("src/dv/config.py", "r") as f:
+              content = f.read()
+
+          # Replace the original code with the new code
+          updated_content = content.replace(original, replacement)
+
+          # Write the updated content back to config.py
+          with open("src/dv/config.py", "w") as f:
+              f.write(updated_content)
+
+          # Add import of config_overrides at the top of __init__.py
+          with open("src/dv/__init__.py", "a") as f:
+              f.write("\n# Import config_overrides to setup runtime paths\ntry:\n    import dv.config_overrides\nexcept ImportError:\n    pass\n")
+          EOF
+          
+          # Apply the patch
+          python config_patch.py
+          
+          # Verify the changes
+          echo "Modified config.py:"
+          grep -A15 "PROMPTS_DIR" src/dv/config.py
+          echo "Modified __init__.py:"
+          cat src/dv/__init__.py
+      
+      - name: Extract version from pyproject.toml and verify environment
+        id: get_version
+        run: |
+          source .venv/bin/activate
+          VERSION=$(python -c "import toml; print(toml.load('pyproject.toml')['project']['version'])")
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "Version: $VERSION"
+          
+          # Debug: Check current git ref
+          echo "Current GitHub ref: $GITHUB_REF"
+          
+          # Verify Python configuration
+          echo "Python version information:"
+          python --version
+      
+      - name: Create PyInstaller spec file
+        run: |
+          source .venv/bin/activate
+          
+          cat > dv.spec << EOF
+          # -*- mode: python ; coding: utf-8 -*-
+          import sys
+          import glob
+          import os
+          from PyInstaller.utils.hooks import collect_all, copy_metadata
+
+          block_cipher = None
+          
+          # Get the absolute path to the directories
+          base_dir = os.getcwd()
+          prompts_dir = os.path.join(base_dir, 'prompts')
+          docs_dir = os.path.join(base_dir, 'docs')
+          db_dir = os.path.join(base_dir, 'db')
+          
+          # Ensure the docs and db directories exist
+          for d in [docs_dir, db_dir]:
+              if not os.path.exists(d):
+                  os.makedirs(d)
+          
+          # Print debugging info
+          print(f"Working directory: {base_dir}")
+          print(f"Prompts directory: {prompts_dir}")
+          print(f"Docs directory: {docs_dir}")
+          print(f"DB directory: {db_dir}")
+          
+          # Verify prompts directory exists and list its contents
+          if os.path.exists(prompts_dir):
+              print(f"Prompts directory exists with contents: {os.listdir(prompts_dir)}")
+          else:
+              print("ERROR: Prompts directory not found!")
+          
+          # Collect pydantic with all its dependencies
+          pydantic_datas, pydantic_binaries, pydantic_hiddenimports = collect_all('pydantic')
+          langchain_datas, langchain_binaries, langchain_hiddenimports = collect_all('langchain_ollama')
+          langchain_core_datas, langchain_core_binaries, langchain_core_hiddenimports = collect_all('langchain_core')
+          
+          # Add standard library modules that might be missed
+          std_lib_imports = ['glob', 'pathlib', 'collections', 'collections.abc', 'os', 're', 'sys', 
+                             'sqlite3', 'datetime', 'logging', 'functools', 'typing']
+
+          # Define datas with explicit paths
+          datas = []
+          
+          # Always add prompts directory explicitly
+          datas.append((prompts_dir, 'prompts'))
+          datas.append((docs_dir, 'docs'))
+          datas.append((db_dir, 'db'))
+          
+          # Add other data dependencies
+          datas.extend(pydantic_datas)
+          datas.extend(langchain_datas)
+          datas.extend(langchain_core_datas)
+          
+          # Print what we're including
+          print(f"Including data files: {datas}")
+                    
+          a = Analysis(
+              ['src/dv/main.py'],
+              pathex=[base_dir],
+              binaries=[*pydantic_binaries, *langchain_binaries, *langchain_core_binaries],
+              datas=datas,
+              hiddenimports=[
+                  *std_lib_imports,
+                  *pydantic_hiddenimports,
+                  *langchain_hiddenimports,
+                  *langchain_core_hiddenimports,
+                  'pydantic.deprecated.decorator',
+                  'pydantic.deprecated',
+                  'pydantic._internal._model_construction',
+                  'pydantic.version',
+                  'langchain_community.vectorstores',
+                  'langchain_community.embeddings',
+                  'numpy',
+                  'ollama',
+                  'dv.config_overrides',  # Make sure our runtime config is included
+              ],
+              hookspath=[],
+              hooksconfig={},
+              runtime_hooks=[],
+              excludes=[],
+              win_no_prefer_redirects=False,
+              win_private_assemblies=False,
+              cipher=block_cipher,
+              noarchive=False,
+          )
+          
+          pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+          
+          exe = EXE(
+              pyz,
+              a.scripts,
+              a.binaries,
+              a.zipfiles,
+              a.datas,
+              [],
+              name='dv-${{ env.VERSION }}-linux',
+              debug=False,
+              bootloader_ignore_signals=False,
+              strip=False,
+              upx=True,
+              upx_exclude=[],
+              runtime_tmpdir=None,
+              console=True,
+              disable_windowed_traceback=False,
+              argv_emulation=False,
+              target_arch=None,
+              codesign_identity=None,
+              entitlements_file=None,
+          )
+          EOF
+
+      - name: Build with PyInstaller
+        run: |
+          source .venv/bin/activate
+          # Build with debug log level and clean build directory
+          python -m PyInstaller --clean --log-level DEBUG dv.spec
+      
+      - name: Verify binary and included resources
+        run: |
+          # Check if binary was created successfully
+          if [ ! -f "dist/dv-${{ env.VERSION }}-linux" ]; then
+            echo "ERROR: PyInstaller failed to create the binary!"
+            exit 1
+          fi
+          
+          # Examine included resources
+          echo "Verifying binary contents:"
+          find dist -name "prompts" | grep -q "prompts" && echo "✅ Prompts directory found in dist" || echo "❌ Prompts directory NOT found in dist"
+          
+          # Check strings in binary for prompts path references
+          strings dist/dv-${{ env.VERSION }}-linux | grep -q "prompts" && echo "✅ 'prompts' string found in binary" || echo "❌ 'prompts' string NOT found in binary"
+      
+      - name: Create AppDir structure
+        run: |
+          mkdir -p AppDir/usr/bin
+          mkdir -p AppDir/usr/share/applications
+          mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
+          mkdir -p AppDir/usr/share/dv/prompts
+          mkdir -p AppDir/usr/share/dv/docs
+          mkdir -p AppDir/usr/share/dv/db
+          
+          # Copy the binary
+          cp dist/dv-${{ env.VERSION }}-linux AppDir/usr/bin/dv
+          chmod +x AppDir/usr/bin/dv
+          
+          # Copy prompts directory contents to the AppDir - this ensures access outside of PyInstaller bundle
+          cp -r prompts/* AppDir/usr/share/dv/prompts/
+          
+          # Create .desktop file
+          cat > AppDir/usr/share/applications/dv.desktop << EOF
+          [Desktop Entry]
+          Name=DocuVerse
+          Comment=Q&A app for easy information retrieval from documents
+          Exec=dv
+          Icon=dv
+          Terminal=false
+          Type=Application
+          Categories=Utility;Education;Office;
+          EOF
+          
+          # Create AppRun script with proper environment setup
+          cat > AppDir/AppRun << EOF
+          #!/bin/bash
+          # Determine the AppDir location
+          SELF=\$(readlink -f "\$0")
+          HERE=\${SELF%/*}
+          
+          # Set up environment variables
+          export PATH="\${HERE}/usr/bin:\${PATH}"
+          
+          # Set environment variables for the application to find resources outside the PyInstaller bundle
+          # These will override the built-in paths in the application
+          export DV_PROMPTS_DIR="\${HERE}/usr/share/dv/prompts"
+          export DV_DOCS_DIR="\${HERE}/usr/share/dv/docs"
+          export DV_DB_PATH="\${HERE}/usr/share/dv/db/books.db"
+          
+          # Debug information
+          echo "Running DocuVerse from \${HERE}/usr/bin/dv"
+          echo "Environment settings:"
+          echo "  DV_PROMPTS_DIR=\${DV_PROMPTS_DIR}"
+          echo "  DV_DOCS_DIR=\${DV_DOCS_DIR}"
+          echo "  DV_DB_PATH=\${DV_DB_PATH}"
+          
+          # Verify prompts directory exists
+          if [ -d "\${DV_PROMPTS_DIR}" ]; then
+            echo "Prompts directory exists with contents:"
+            ls -la "\${DV_PROMPTS_DIR}"
+          else
+            echo "WARNING: Prompts directory does not exist at \${DV_PROMPTS_DIR}"
+            mkdir -p "\${DV_PROMPTS_DIR}"
+          fi
+          
+          # Execute the application
+          "\${HERE}/usr/bin/dv" "\$@"
+          EOF
+          
+          # Make AppRun executable
+          chmod +x AppDir/AppRun
+          
+          # Create a simple icon
+          convert -size 256x256 xc:transparent -fill blue -draw "circle 128,128 128,64" -font Arial -fill black -pointsize 24 -gravity center -annotate 0 "DV" AppDir/dv.png
+          cp AppDir/dv.png AppDir/usr/share/icons/hicolor/256x256/apps/
+          
+          # Copy desktop file and icon to root as required by AppImage specification
+          cp AppDir/usr/share/applications/dv.desktop AppDir/dv.desktop
+          cp AppDir/dv.png AppDir/.DirIcon
+          
+          echo "AppDir structure created:"
+          find AppDir -type f | sort
+      
+      - name: Build AppImage
+        run: |
+          # Set the architecture explicitly
+          ARCH=x86_64 ./appimagetool -v AppDir "DocuVerse-${{ env.VERSION }}-x86_64.AppImage"
+      
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: docuverse-linux
+          path: DocuVerse-${{ env.VERSION }}-x86_64.AppImage
+          
+      - name: Set release info
+        id: release_info
+        run: |
+          # Get current date for development builds
+          CURRENT_DATE=$(date +%Y%m%d-%H%M%S)
+          
+          # For tag-based releases
+          if [[ $GITHUB_REF == refs/tags/* ]]; then
+            echo "IS_TAG=true" >> $GITHUB_ENV
+            echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+            echo "RELEASE_NAME=DocuVerse ${{ env.VERSION }}" >> $GITHUB_ENV
+            echo "SHOULD_RELEASE=true" >> $GITHUB_ENV
+            echo "Running on tag: $GITHUB_REF, tag name: ${GITHUB_REF#refs/tags/}"
+          # For pull requests
+          elif [[ $GITHUB_REF == refs/pull/* ]]; then
+            PR_NUMBER=$(echo $GITHUB_REF | cut -d'/' -f3)
+            echo "IS_TAG=false" >> $GITHUB_ENV
+            # Don't try to create a release or tag for PRs, but upload to artifacts
+            echo "SHOULD_RELEASE=false" >> $GITHUB_ENV
+            echo "Running on PR: $GITHUB_REF, PR number: $PR_NUMBER"
+          # For push to main
+          else
+            echo "IS_TAG=false" >> $GITHUB_ENV
+            echo "TAG_NAME=dev-${CURRENT_DATE}" >> $GITHUB_ENV
+            echo "RELEASE_NAME=DocuVerse ${{ env.VERSION }} (Development Build)" >> $GITHUB_ENV
+            echo "PRERELEASE=true" >> $GITHUB_ENV
+            echo "SHOULD_RELEASE=true" >> $GITHUB_ENV
+            echo "Running on branch: $GITHUB_REF"
+          fi
+      
+      - name: Generate release notes
+        if: env.SHOULD_RELEASE == 'true'
+        run: |
+          cat > release_notes.md << EOF
+          # DocuVerse Q&A App Release v${{ env.VERSION }}
+          
+          This release provides the Linux AppImage for DocuVerse, a Q&A application for easy information retrieval from documents of interest.
+          
+          ## Installation
+          1. Download the AppImage
+          2. Make it executable: \`chmod +x DocuVerse-${{ env.VERSION }}-x86_64.AppImage\`
+          3. Run it: \`./DocuVerse-${{ env.VERSION }}-x86_64.AppImage\`
+          
+          ## Features
+          - Easy document indexing and retrieval
+          - Conversational Q&A interface
+          - Modern GUI with customtkinter
+          - Command-line interface option
+          EOF
+          
+          if [[ $GITHUB_REF != refs/tags/* ]]; then
+            cat >> release_notes.md << EOF
+          
+          ## Development Build
+          This is an automated development build, not an official release.
+          - Build triggered by: $GITHUB_REF
+          - Build date: $(date)
+          - Commit: $GITHUB_SHA
+          EOF
+          fi
+      
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        if: env.SHOULD_RELEASE == 'true'
+        with:
+          files: DocuVerse-${{ env.VERSION }}-x86_64.AppImage
+          name: ${{ env.RELEASE_NAME }}
+          tag_name: ${{ env.TAG_NAME }}
+          body_path: release_notes.md
+          draft: false
+          prerelease: ${{ env.PRERELEASE == 'true' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
