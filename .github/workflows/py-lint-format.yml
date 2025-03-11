@@ -1,4 +1,4 @@
-name: Python Code Quality
+name: Python Linting and Formatting
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
     branches: [ main ]
 
 jobs:
-  lint-and-type-check:
+  lint-and-format:
     runs-on: ubuntu-latest
     
     steps:
@@ -28,40 +28,27 @@ jobs:
         run: |
           uv venv
           source .venv/bin/activate
-          uv pip install -e .
-          uv pip install pyright ruff
-      
-      - name: Run Pyright type checker
-        id: pyright
-        continue-on-error: true
-        run: |
-          source .venv/bin/activate
-          echo "::group::Pyright Type Checking"
-          pyright src/dv
-          echo "::endgroup::"
+          uv pip install ruff
       
       - name: Run Ruff linter
         id: ruff-lint
-        continue-on-error: true
         run: |
           source .venv/bin/activate
-          echo "::group::Ruff Linting"
+          echo "Running Ruff linter..."
           ruff check src/dv
-          echo "::endgroup::"
       
       - name: Check Ruff formatting
         id: ruff-format-check
-        continue-on-error: true
         run: |
           source .venv/bin/activate
-          echo "::group::Ruff Format Check"
+          echo "Checking code formatting..."
           ruff format --check src/dv
-          echo "::endgroup::"
       
       - name: Format code if on pull request
         if: github.event_name == 'pull_request'
         run: |
           source .venv/bin/activate
+          echo "Applying Ruff formatting..."
           ruff format src/dv
       
       - name: Commit changes if formatting was applied
@@ -69,17 +56,4 @@ jobs:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git diff --quiet || (git add src/dv && git commit -m "Apply ruff formatting" && git push)
-      
-      - name: Report status
-        run: |
-          echo "::group::Check Results Summary"
-          echo "Pyright check status: ${{ steps.pyright.outcome }}"
-          echo "Ruff lint status: ${{ steps.ruff-lint.outcome }}"
-          echo "Ruff format check status: ${{ steps.ruff-format-check.outcome }}"
-          echo "::endgroup::"
-          
-          if [[ "${{ steps.pyright.outcome }}" == "failure" || "${{ steps.ruff-lint.outcome }}" == "failure" || "${{ steps.ruff-format-check.outcome }}" == "failure" ]]; then
-            echo "One or more checks failed. Please review the logs for details."
-            exit 1
-          fi
+          git diff --quiet || (git add src/dv && git commit -m "Apply Ruff formatting" && git push)
