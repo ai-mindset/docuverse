@@ -48,8 +48,13 @@ jobs:
           uv pip install -e .
           uv pip install "pyinstaller>=6.1.0" toml
       
-      - name: Verify prompts directory
+      - name: Prepare directories
         run: |
+          # Create required directories if they don't exist
+          mkdir -p docs
+          mkdir -p db
+          
+          # Verify prompts directory
           if [ ! -d "prompts" ]; then
             echo "ERROR: prompts directory not found in repository"
             exit 1
@@ -73,6 +78,7 @@ jobs:
           cat > docuverse.spec << EOF
           # -*- mode: python ; coding: utf-8 -*-
           import os
+          import sys
           from PyInstaller.utils.hooks import collect_all
 
           block_cipher = None
@@ -80,30 +86,39 @@ jobs:
           # Collect dependencies
           pydantic_datas, pydantic_binaries, pydantic_hiddenimports = collect_all('pydantic')
           langchain_datas, langchain_binaries, langchain_hiddenimports = collect_all('langchain_ollama')
+          langchain_core_datas, langchain_core_binaries, langchain_core_hiddenimports = collect_all('langchain_core')
           
           # Recursively include all files from prompts directory
           prompts_files = []
           for root, dirs, files in os.walk('prompts'):
               for file in files:
                   file_path = os.path.join(root, file)
-                  prompts_files.append((file_path, os.path.dirname(file_path)))
+                  prompts_files.append((file_path, root))
+          
+          # Ensure that docs and db directories exist
+          os.makedirs('docs', exist_ok=True)
+          os.makedirs('db', exist_ok=True)
 
           a = Analysis(
               ['src/dv/main.py'],
               pathex=[],
-              binaries=[*pydantic_binaries, *langchain_binaries],
+              binaries=[*pydantic_binaries, *langchain_binaries, *langchain_core_binaries],
               datas=[
                   *prompts_files,
                   ('docs', 'docs'),
                   ('db', 'db'),
                   *pydantic_datas,
                   *langchain_datas,
+                  *langchain_core_datas,
               ],
               hiddenimports=[
                   *pydantic_hiddenimports,
                   *langchain_hiddenimports,
+                  *langchain_core_hiddenimports,
                   'numpy',
                   'ollama',
+                  'langchain_community.vectorstores',
+                  'langchain_community.embeddings',
               ],
               hookspath=[],
               hooksconfig={},
@@ -136,8 +151,9 @@ jobs:
           # Build with PyInstaller
           python -m PyInstaller --clean docuverse.spec
           
-          # Verify the build includes prompts directory
-          find dist -name "*.md" | grep prompts || echo "No prompts found in bundle"
+          # Verify the build
+          echo "Checking if prompts directory was included in the build:"
+          find dist -name "*.md" | grep -i prompts || echo "No prompt files found in the build"
       
       - name: Create AppDir
         run: |
@@ -157,12 +173,12 @@ jobs:
           cat > AppDir/usr/share/applications/docuverse.desktop << EOF
           [Desktop Entry]
           Name=dv
-          Comment=Q&A app for documents
+          Comment=Q&A app for easy information retrieval from documents
           Exec=docuverse
           Icon=docuverse
           Terminal=false
           Type=Application
-          Categories=Utility;Education;
+          Categories=Utility;Education;Office;
           EOF
           cp AppDir/usr/share/applications/docuverse.desktop AppDir/docuverse.desktop
           
@@ -179,6 +195,18 @@ jobs:
         run: |
           ARCH=x86_64 ./appimagetool AppDir "dv-${{ env.VERSION }}-x86_64.AppImage"
       
+      - name: Test AppImage
+        run: |
+          # Make AppImage executable
+          chmod +x dv-${{ env.VERSION }}-x86_64.AppImage
+          
+          # Extract AppImage to verify contents (without running)
+          ./dv-${{ env.VERSION }}-x86_64.AppImage --appimage-extract
+          
+          # Check for prompt files in the extracted AppImage
+          echo "Checking for prompt files in the AppImage:"
+          find squashfs-root -name "*.md" | grep -i prompts || echo "No prompt files found in the AppImage"
+      
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -191,6 +219,15 @@ jobs:
         with:
           files: dv-${{ env.VERSION }}-x86_64.AppImage
           name: dv ${{ env.VERSION }}
+          body: |
+            dv Q&A App Release v${{ env.VERSION }}
+            
+            This release provides the Linux AppImage for dv, a Q&A application for easy information retrieval from documents.
+            
+            ## Installation
+            1. Download the AppImage
+            2. Make it executable: `chmod +x dv-${{ env.VERSION }}-x86_64.AppImage`
+            3. Run it: `./dv-${{ env.VERSION }}-x86_64.AppImage`
           draft: false
           prerelease: false
         env:
