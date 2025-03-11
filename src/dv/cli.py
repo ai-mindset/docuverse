@@ -13,28 +13,14 @@ logger = setup_logging(settings.log_level)
 
 
 # %%
-def parse_args() -> argparse.Namespace:
-    """Parse command line arguments."""
-    parser = argparse.ArgumentParser(description="Interactive Q&A system for documents")
-    parser.add_argument(
-        "--model", type=str, default=settings.LLM_MODEL, help="Ollama model to use"
-    )
-    parser.add_argument(
-        "--temperature", type=float, default=0.1, help="Temperature for LLM (0-1)"
-    )
-    parser.add_argument(
-        "--results", type=int, default=3, help="Number of documents to retrieve"
-    )
-    parser.add_argument(
-        "--reindex", action="store_true", help="Reindex all documents before starting"
-    )
-    return parser.parse_args()
-
-
-# %%
-def main() -> None:
+def main(args=None) -> None:
     """Run the interactive Q&A system."""
-    args = parse_args()
+    # Use provided args or parse them if not provided
+    # Check if no arguments were passed
+    if args is None:
+        raise ValueError(
+            "No arguments provided to main(). Please provide the necessary arguments."
+        )
 
     # Reindex documents if requested
     if args.reindex:
@@ -61,7 +47,7 @@ def main() -> None:
             question = input("\nQuestion: ").strip()
 
             # Check for exit command
-            if question.lower() in ("exit", "quit"):
+            if question.lower() in settings.EXIT_KEYWORDS:
                 print("Goodbye!")
                 break
 

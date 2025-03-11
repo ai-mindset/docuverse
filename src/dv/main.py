@@ -135,43 +135,38 @@ def initialize_database() -> bool:
 
 # %%
 def parse_arguments() -> argparse.Namespace:
-    """
-    Parse command line arguments.
-
-    Returns:
-        argparse.Namespace: Parsed arguments.
-    """
+    """Parse command line arguments."""
     parser = argparse.ArgumentParser(description="Document Q&A System")
 
-    parser.add_argument(
-        "--cli", action="store_true", help="Use command-line interface instead of GUI"
-    )
-
+    # Common arguments for both CLI and GUI
     parser.add_argument(
         "--model",
         type=str,
         default=settings.LLM_MODEL,
         help=f"Ollama model to use (default: {settings.LLM_MODEL})",
     )
-
     parser.add_argument(
         "--temperature",
         type=float,
         default=0.1,
         help="Temperature for LLM (0-1) (default: 0.1)",
     )
-
     parser.add_argument(
         "--results",
         type=int,
         default=3,
         help="Number of documents to retrieve (default: 3)",
     )
-
     parser.add_argument(
         "--reindex", action="store_true", help="Force reindexing of all documents"
     )
 
+    # Interface selection
+    parser.add_argument(
+        "--cli", action="store_true", help="Use command-line interface instead of GUI"
+    )
+
+    # GUI-specific arguments
     parser.add_argument(
         "--light-mode",
         action="store_true",
@@ -292,6 +287,62 @@ def gui_prompt_loop(args: argparse.Namespace) -> int:
 
 
 # %%
+def cli_prompt_loop() -> int:
+    """
+    Custom implementation of CLI prompt loop with exit keyword handling.
+
+    Returns:
+        int: Exit code (0 for success, non-zero for errors).
+    """
+    # Parse the CLI-specific arguments
+    args = parse_arguments()
+
+    # Create the QA chain
+    qa = create_qa_chain(
+        model_name=args.model, temperature=args.temperature, k=args.results
+    )
+
+    print(f"Q&A system initialized with model: {args.model}")
+    print("Type 'exit' to quit or 'reset' to start a new conversation")
+    print("-" * 50)
+
+    # Interactive loop
+    while True:
+        try:
+            # Get user input
+            question = input("\nQuestion: ").strip()
+
+            # Check for exit keywords
+            if question.lower() in (
+                keyword.lower() for keyword in settings.EXIT_KEYWORDS
+            ):
+                print("Goodbye!")
+                return 0
+
+            # Check for reset command
+            if question.lower() == "reset":
+                qa.reset_chat_history()
+                print("Conversation has been reset.")
+                continue
+
+            # Skip empty questions
+            if not question:
+                continue
+
+            # Process the question
+            answer = qa.query(question)
+            print("\nAnswer:", answer)
+
+        except KeyboardInterrupt:
+            print("\nGoodbye!")
+            return 0
+        except Exception as e:
+            logger.error(f"Error in CLI: {str(e)}")
+            print(f"An error occurred: {str(e)}")
+            return 1
+
+
+# %%
 def main() -> int:
     """
     Main entry point for the application.
@@ -335,7 +386,7 @@ def main() -> int:
     try:
         if args.cli:
             # Use our custom CLI implementation that handles exit keywords properly
-            return cli_prompt_loop()
+            return cli_main(args=args)
         else:
             # Use our custom GUI implementation that handles exit keywords properly
             return gui_prompt_loop(args)
