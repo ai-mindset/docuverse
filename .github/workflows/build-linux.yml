@@ -13,10 +13,6 @@ on:
 permissions:
   contents: write
   packages: read
-  
-jobs:
-  build-linux:
-    runs-on: ubuntu-latest
 
 jobs:
   build-linux:
