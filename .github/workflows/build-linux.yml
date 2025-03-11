@@ -5,9 +5,15 @@ on:
     branches:
       - main
   push:
+    branches:
+      - main
     tags:
       - 'v*'  # Also run when a tag is pushed that starts with 'v'
 
+permissions:
+  contents: write
+  packages: read
+  
 jobs:
   build-linux:
     runs-on: ubuntu-latest
@@ -255,35 +261,72 @@ jobs:
           name: dv-linux
           path: dv-${{ env.VERSION }}-x86_64.AppImage
           
-      - name: Check if running on tag
-        id: check-tag
+      - name: Set release info
+        id: release_info
         run: |
-          if [[ $GITHUB_REF == refs/tags/v* ]]; then
+          # Get current date for development builds
+          CURRENT_DATE=$(date +%Y%m%d-%H%M%S)
+          
+          # For tag-based releases
+          if [[ $GITHUB_REF == refs/tags/* ]]; then
             echo "IS_TAG=true" >> $GITHUB_ENV
-            RELEASE_VERSION=${GITHUB_REF#refs/tags/v}
-            echo "RELEASE_VERSION=$RELEASE_VERSION" >> $GITHUB_ENV
-            echo "Running on tag: $GITHUB_REF, version: $RELEASE_VERSION"
+            echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+            echo "RELEASE_NAME=dv ${{ env.VERSION }}" >> $GITHUB_ENV
+            echo "SHOULD_RELEASE=true" >> $GITHUB_ENV
+            echo "Running on tag: $GITHUB_REF, tag name: ${GITHUB_REF#refs/tags/}"
+          # For pull requests
+          elif [[ $GITHUB_REF == refs/pull/* ]]; then
+            PR_NUMBER=$(echo $GITHUB_REF | cut -d'/' -f3)
+            echo "IS_TAG=false" >> $GITHUB_ENV
+            # Don't try to create a release or tag for PRs, but upload to artifacts
+            echo "SHOULD_RELEASE=false" >> $GITHUB_ENV
+            echo "Running on PR: $GITHUB_REF, PR number: $PR_NUMBER"
+          # For push to main
           else
             echo "IS_TAG=false" >> $GITHUB_ENV
-            echo "Not running on a tag: $GITHUB_REF"
+            echo "TAG_NAME=dev-${CURRENT_DATE}" >> $GITHUB_ENV
+            echo "RELEASE_NAME=dv ${{ env.VERSION }} (Development Build)" >> $GITHUB_ENV
+            echo "PRERELEASE=true" >> $GITHUB_ENV
+            echo "SHOULD_RELEASE=true" >> $GITHUB_ENV
+            echo "Running on branch: $GITHUB_REF"
           fi
+      
+      - name: Generate release notes
+        if: env.SHOULD_RELEASE == 'true'
+        run: |
+          cat > release_notes.md << EOF
+          # dv Q&A App Release v${{ env.VERSION }}
           
-      - name: Create Release
+          This release provides the Linux AppImage for dv, a Q&A application for easy information retrieval from documents of interest.
+          
+          ## Installation
+          1. Download the AppImage
+          2. Make it executable: \`chmod +x dv-${{ env.VERSION }}-x86_64.AppImage\`
+          3. Run it: \`./dv-${{ env.VERSION }}-x86_64.AppImage\`
+          EOF
+          
+          if [[ $GITHUB_REF != refs/tags/* ]]; then
+            cat >> release_notes.md << EOF
+          
+          ## Development Build
+          This is an automated development build, not an official release.
+          - Build triggered by: $GITHUB_REF
+          - Build date: $(date)
+          - Commit: $GITHUB_SHA
+          EOF
+          fi
+      
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
-        if: env.IS_TAG == 'true'
+        if: env.SHOULD_RELEASE == 'true'
         with:
           files: dv-${{ env.VERSION }}-x86_64.AppImage
-          name: dv ${{ env.VERSION }}
-          body: |
-            dv Q&A App Release v${{ env.VERSION }}
-            
-            This release provides the Linux AppImage for dv, a Q&A application for easy information retrieval from documents of interest.
-            
-            ## Installation
-            1. Download the AppImage
-            2. Make it executable: `chmod +x dv-${{ env.VERSION }}-x86_64.AppImage`
-            3. Run it: `./dv-${{ env.VERSION }}-x86_64.AppImage`
+          name: ${{ env.RELEASE_NAME }}
+          tag_name: ${{ env.TAG_NAME }}
+          body_path: release_notes.md
           draft: false
-          prerelease: false
+          prerelease: ${{ env.PRERELEASE == 'true' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+
