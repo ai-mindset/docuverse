@@ -92,7 +92,7 @@ jobs:
           block_cipher = None
           
           # Get the absolute path to the directories
-          base_dir = os.path.abspath(os.path.dirname(__file__))
+          base_dir = os.getcwd()
           prompts_dir = os.path.join(base_dir, 'prompts')
           docs_dir = os.path.join(base_dir, 'docs')
           db_dir = os.path.join(base_dir, 'db')
