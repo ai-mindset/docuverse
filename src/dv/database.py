@@ -115,27 +115,6 @@ def sanitise_table_name(table_name: str) -> str:
 
 
 # %%
-def get_document_files() -> list[tuple[str, str]]:
-    """
-    Get all document files from the books directory.
-
-    Returns:
-        list[tuple[str, str]]: List of tuples containing (file path, table name).
-    """
-    books_dir = settings.DOCS_DIR
-    result = []
-
-    # Get all .txt and .md files
-    for ext in ["*.txt", "*.md"]:
-        for file_path in glob.glob(os.path.join(books_dir, ext)):
-            # Use the filename without extension as the table name
-            table_name = os.path.splitext(os.path.basename(file_path))[0]
-            result.append((file_path, table_name))
-
-    return result
-
-
-# %%
 def save_document(conn: sqlite3.Connection, file_path: str, table_name: str) -> bool:
     """
     Save document to SQLite database.
@@ -245,6 +224,31 @@ def generate_and_save_embeddings(conn: sqlite3.Connection) -> bool:
     except Exception as e:
         logger.error(f"Error generating embeddings: {str(e)}")
         return False
+
+
+# %%
+def get_document_files() -> list[tuple[str, str]]:
+    """
+    Get all document files from the docs directory.
+
+    Returns:
+        list[tuple[str, str]]: List of tuples containing (file path, table name).
+    """
+    docs_dir = settings.DOCS_DIR
+
+    # Create docs directory if it doesn't exist
+    os.makedirs(docs_dir, exist_ok=True)
+
+    result = []
+
+    # Get all .txt and .md files
+    for ext in ["*.txt", "*.md"]:
+        for file_path in glob.glob(os.path.join(docs_dir, ext)):
+            # Use the filename without extension as the table name
+            table_name = os.path.splitext(os.path.basename(file_path))[0]
+            result.append((file_path, table_name))
+
+    return result
 
 
 # %%

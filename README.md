@@ -15,8 +15,9 @@ A self-hosted, privacy-preserving Question & Answer application for easy informa
 ## Installation
 
 ### Prerequisites
-- Python 3.13 or higher
-- [Ollama](https://ollama.ai/) installed and running locally (for language model support)
+- Python 3.13 or higher (for development)
+- Install [Ollama](https://ollama.com/download) installed and running locally (for language model support)
+- Download the [mistral 7b](https://ollama.com/library/mistral) LLM with `ollama pull mistral` if you have a mainstream computer. Opt for [mistral-small 24b](https://ollama.com/library/mistral-small:24b) if you have a higher-end setup (run `ollama run mistral-small:24b`)
 
 ### Method 1: Using AppImage (Linux)
 1. Download the latest AppImage from the [Releases](https://github.com/yourusername/docuverse/releases) page
