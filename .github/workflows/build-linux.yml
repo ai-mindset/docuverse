@@ -1,14 +1,12 @@
 name: Build Linux AppImage
 
 on:
-  pull_request:
-    branches:
-      - main
   push:
     branches:
       - main
-    tags:
-      - 'v*'  # Also run when a tag is pushed that starts with 'v'
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: write
