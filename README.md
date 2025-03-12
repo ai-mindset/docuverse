@@ -8,6 +8,7 @@ A self-hosted, privacy-preserving Question & Answer application for easy informa
 
 ### Component Structure
 ```mermaid
+%%{init: { 'themeVariables': { 'darkMode': true }, 'theme': 'base' }}%%
 flowchart TB
     User([User]) --- UI[/GUI/CLI Interface\]
     
@@ -39,53 +40,69 @@ flowchart TB
         end
     end
     
-    %% Styling with both colors and shapes for accessibility
-    classDef interface fill:#f9f,stroke:#333,stroke-width:2px,stroke-dasharray: 5 5
-    classDef storage fill:#bbf,stroke:#333,stroke-width:2px
-    classDef processing fill:#bfb,stroke:#333,stroke-width:2px
-    classDef external fill:#fbb,stroke:#333,stroke-width:4px
+    %% Dark Mode Colors
+    classDef interfaceDark fill:#6E40C9,stroke:#d6d8db,stroke-width:2px,stroke-dasharray:5 5,color:#FFFFFF
+    classDef storageDark fill:#0366D6,stroke:#d6d8db,stroke-width:2px,color:#FFFFFF
+    classDef processingDark fill:#28A745,stroke:#d6d8db,stroke-width:2px,color:#000000
+    classDef externalDark fill:#D73A49,stroke:#d6d8db,stroke-width:3px,color:#FFFFFF
     
-    class UI interface
-    class SQLite storage
-    class TextSplitter,Embeddings,VectorSearch,QAChain processing
-    class Ollama external
+    %% Light Mode Colors
+    classDef interfaceLight fill:#8A63D2,stroke:#24292e,stroke-width:2px,stroke-dasharray:5 5,color:#FFFFFF
+    classDef storageLight fill:#2188FF,stroke:#24292e,stroke-width:2px,color:#FFFFFF
+    classDef processingLight fill:#22863A,stroke:#24292e,stroke-width:2px,color:#FFFFFF
+    classDef externalLight fill:#CB2431,stroke:#24292e,stroke-width:3px,color:#FFFFFF
+    
+    %% Apply classes conditionally based on theme
+    class UI interfaceDark
+    class SQLite storageDark
+    class TextSplitter,Embeddings,VectorSearch,QAChain processingDark
+    class Ollama externalDark
 ```
 
 ### Data flow 
 ```mermaid
-flowchart LR
-    %% Document Indexing Flow
-    subgraph Indexing ["Document Indexing Pipeline"]
-        A[".txt/.md Files"] -->|Add| B[GUI/CLI]
-        B -->|Process| C["RecursiveCharTextSplitter"]
-        C -->|Chunk| D["Nomic Embedding Model"]
-        D -->|Store| E[(SQLite Vector DB)]
+%%{init: { 'themeVariables': { 'darkMode': false }, 'theme': 'base' }}%%
+flowchart TB
+    User([User]) --- UI[/GUI/CLI Interface\]
+    
+    subgraph DocuVerse ["DocuVerse System"]
+        UI --- Document_Processing
+        UI --- Retrieval_QA
+        Document_Processing --- Storage
+        Retrieval_QA --- Storage
+        Retrieval_QA --- External
+        
+        subgraph Document_Processing ["Document Processing"]
+            TextSplitter[(Text Splitter)]
+            Embeddings["Nomic Embeddings"]
+            TextSplitter --> Embeddings
+        end
+        
+        subgraph Storage ["Data Storage"]
+            SQLite[(SQLite Database)]
+        end
+        
+        subgraph Retrieval_QA ["Retrieval & QA"]
+            VectorSearch{{Vector Search}}
+            QAChain{{QA Chain}}
+            VectorSearch --> QAChain
+        end
+        
+        subgraph External ["External Services"]
+            Ollama["Ollama LLM (Mistral)"]
+        end
     end
     
-    %% Query Flow
-    subgraph Querying ["Query Processing Pipeline"]
-        F["User Question"] -->|Input| G[GUI/CLI]
-        G -->|Send| H[QA Chain]
-        H -->|Request Context| I[Vector Search]
-        I -->|Search| J[(SQLite Vector DB)]
-        J -->|Return Top-K| I
-        I -->|Provide Context| H
-        H -->|Generate with Context| K[Ollama LLM]
-        K -->|Return Answer| H
-        H -->|Display| G
-    end
+    %% Apply Light Mode Classes
+    classDef interfaceLight fill:#8A63D2,stroke:#24292e,stroke-width:2px,stroke-dasharray:5 5,color:#FFFFFF
+    classDef storageLight fill:#2188FF,stroke:#24292e,stroke-width:2px,color:#FFFFFF
+    classDef processingLight fill:#22863A,stroke:#24292e,stroke-width:2px,color:#FFFFFF
+    classDef externalLight fill:#CB2431,stroke:#24292e,stroke-width:3px,color:#FFFFFF
     
-    %% Styling with patterns and shapes for accessibility
-    classDef input fill:#f9f,stroke:#333,shape:document
-    classDef process fill:#bfb,stroke:#333,shape:box
-    classDef storage fill:#bbf,stroke:#333,shape:cylinder
-    classDef model fill:#fbb,stroke:#333,shape:hexagon
-    
-    class A,F input
-    class B,C,G process
-    class D,H,I process
-    class E,J storage
-    class K model
+    class UI interfaceLight
+    class SQLite storageLight
+    class TextSplitter,Embeddings,VectorSearch,QAChain processingLight
+    class Ollama externalLight
 ```
 
 ## Features
