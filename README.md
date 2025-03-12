@@ -4,6 +4,90 @@
 
 A self-hosted, privacy-preserving Question & Answer application for easy information retrieval from your personal document collection. DocuVerse (a blend of "Document" and "Converse") helps you interact with your documents through natural language queries, providing contextually relevant answers powered by language models—all while keeping your data completely private on your local machine.
 
+## System Architecture
+
+### Component Structure
+```mermaid
+flowchart TB
+    User([User]) --- UI[/GUI/CLI Interface\]
+    
+    subgraph DocuVerse ["DocuVerse System"]
+        UI --- Document_Processing
+        UI --- Retrieval_QA
+        Document_Processing --- Storage
+        Retrieval_QA --- Storage
+        Retrieval_QA --- External
+        
+        subgraph Document_Processing ["Document Processing"]
+            TextSplitter[(Text Splitter)]
+            Embeddings["Nomic Embeddings"]
+            TextSplitter --> Embeddings
+        end
+        
+        subgraph Storage ["Data Storage"]
+            SQLite[(SQLite Database)]
+        end
+        
+        subgraph Retrieval_QA ["Retrieval & QA"]
+            VectorSearch{{Vector Search}}
+            QAChain{{QA Chain}}
+            VectorSearch --> QAChain
+        end
+        
+        subgraph External ["External Services"]
+            Ollama["Ollama LLM (Mistral)"]
+        end
+    end
+    
+    %% Styling with both colors and shapes for accessibility
+    classDef interface fill:#f9f,stroke:#333,stroke-width:2px,stroke-dasharray: 5 5
+    classDef storage fill:#bbf,stroke:#333,stroke-width:2px
+    classDef processing fill:#bfb,stroke:#333,stroke-width:2px
+    classDef external fill:#fbb,stroke:#333,stroke-width:4px
+    
+    class UI interface
+    class SQLite storage
+    class TextSplitter,Embeddings,VectorSearch,QAChain processing
+    class Ollama external
+```
+
+### Data flow 
+```mermaid
+flowchart LR
+    %% Document Indexing Flow
+    subgraph Indexing ["Document Indexing Pipeline"]
+        A[".txt/.md Files"] -->|Add| B[GUI/CLI]
+        B -->|Process| C["RecursiveCharTextSplitter"]
+        C -->|Chunk| D["Nomic Embedding Model"]
+        D -->|Store| E[(SQLite Vector DB)]
+    end
+    
+    %% Query Flow
+    subgraph Querying ["Query Processing Pipeline"]
+        F["User Question"] -->|Input| G[GUI/CLI]
+        G -->|Send| H[QA Chain]
+        H -->|Request Context| I[Vector Search]
+        I -->|Search| J[(SQLite Vector DB)]
+        J -->|Return Top-K| I
+        I -->|Provide Context| H
+        H -->|Generate with Context| K[Ollama LLM]
+        K -->|Return Answer| H
+        H -->|Display| G
+    end
+    
+    %% Styling with patterns and shapes for accessibility
+    classDef input fill:#f9f,stroke:#333,shape:document
+    classDef process fill:#bfb,stroke:#333,shape:box
+    classDef storage fill:#bbf,stroke:#333,shape:cylinder
+    classDef model fill:#fbb,stroke:#333,shape:hexagon
+    
+    class A,F input
+    class B,C,G process
+    class D,H,I process
+    class E,J storage
+    class K model
+```
+
 ## Features
 
 - **Interactive Q&A**: Ask questions about your documents in natural language
