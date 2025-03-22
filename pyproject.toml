@@ -28,6 +28,7 @@ dev = [
     "plotext>=5.3.2", # plotext plots directly on terminal
     "ipdb>=0.13.13", # IPython-enabled pdb
     "tqdm>=4.67.1", # Fast, Extensible Progress Meter]
+    "marimo>=0.11.25", # A library for making reactive notebooks and apps
 ]
 
 [tool.ruff]
@@ -43,3 +44,6 @@ target-version = "py313"
 quote-style = "double"
 indent-style = "space"
 line-ending = "lf"
+
+[tool.marimo.runtime]
+pythonpath = ["docuverse/src"]

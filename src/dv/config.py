@@ -16,6 +16,8 @@ from langchain_ollama import OllamaEmbeddings
 from ollama import Client
 from pydantic import BaseModel, ConfigDict, Field, computed_field
 
+import dv.prompts as prompts
+
 # %%
 load_dotenv()
 home = path.expanduser("~")
@@ -45,21 +47,21 @@ class Settings(BaseModel):
     CLIENT: Client = Field(default=Client(host="http://localhost:11434"))
     LLM_MODEL: str = Field(default="mistral")
 
-    PROMPTS_DIR: str = Field(default="prompts/")
+    PROMPTS_DICT: dict[str, str] = prompts.prompts_dict
 
     @computed_field
     @property
     def SYS_PROMPT(self) -> str:  # noqa: N802
-        sys_prompt_content = ""
-        for filename in os.listdir(self.PROMPTS_DIR):
-            if filename.startswith(("sys_", "system_")) and (
-                filename.endswith(".md") or filename.endswith(".txt")
-            ):
-                with open(
-                    os.path.join(self.PROMPTS_DIR, filename), encoding="utf-8"
-                ) as file:
-                    sys_prompt_content += file.read() + "\n\n"
-        return sys_prompt_content.strip()
+        key = next(
+            (k for k in self.PROMPTS_DICT if "sys_prompt" in k and "info_retrieve" in k),
+            None,
+        )
+        sys_prompt: str | None = self.PROMPTS_DICT[key]
+        if not sys_prompt:
+            raise KeyError(
+                f"Required system prompt key '{key}' not found in PROMPTS_DICT"
+            )
+        return sys_prompt
 
     GUI_FONT: Mapping[str, int | str] = Field(
         default={
