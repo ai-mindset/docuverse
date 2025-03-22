@@ -92,6 +92,17 @@ class QAApplication:
         self.animation_chars = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
         self.animation_index = 0
 
+        # Add stages tracking for the processing animation
+        self.processing_stages = [
+            "Analyzing query",
+            "Retrieving documents",
+            "Generating answer",
+            "Formatting response",
+        ]
+        self.current_stage = 0
+        self.stage_progress = 0
+        self.process_timer_id = None
+
         # Initialize the QA chain
         self.qa_chain = None
         self.initialize_qa_chain()
@@ -333,20 +344,57 @@ class QAApplication:
             self.root.after(0, lambda: self.question_entry.focus_set())
 
     def start_processing_animation(self):
-        """Start animated processing indicator."""
+        """Start animated processing indicator with stage tracking."""
         # Cancel any existing animation
         self.stop_processing_animation()
+
+        # Initialize stage tracking
+        self.current_stage = 0
+        self.stage_progress = 0
 
         # Start new animation
         self._update_processing_animation()
 
+        # Start a timer to simulate progress through stages
+        self.process_timer_id = self.root.after(800, self._advance_progress_stage)
+
+    def _advance_progress_stage(self):
+        """Simulate advancement through processing stages."""
+        # Increment progress within current stage
+        self.stage_progress += 1
+
+        # If stage is complete, move to next stage
+        if self.stage_progress >= 3:  # Each stage takes 3 ticks to complete
+            self.stage_progress = 0
+            self.current_stage = min(
+                self.current_stage + 1, len(self.processing_stages) - 1
+            )
+
+        # Schedule next advancement
+        self.process_timer_id = self.root.after(800, self._advance_progress_stage)
+
     def _update_processing_animation(self):
-        """Update the processing animation frame."""
+        """Update the processing animation frame with stage information."""
         # Get current animation character
         char = self.animation_chars[self.animation_index]
 
-        # Update status text
-        self.status_label.configure(text=f"Processing query {char}")
+        # Calculate overall progress percentage
+        total_steps = len(self.processing_stages) * 3  # 3 ticks per stage
+        current_steps = (self.current_stage * 3) + self.stage_progress
+        progress_percent = min(int((current_steps / total_steps) * 100), 99)  # Cap at 99%
+
+        # Current stage name
+        current_stage_name = self.processing_stages[self.current_stage]
+
+        # Create progress bar
+        progress_bar_length = 20
+        filled_length = int(progress_bar_length * progress_percent / 100)
+        progress_bar = "█" * filled_length + "░" * (progress_bar_length - filled_length)
+
+        # Update status text with stage and progress
+        self.status_label.configure(
+            text=f"{char} {current_stage_name} [{progress_bar}] {progress_percent}%"
+        )
 
         # Increment animation index
         self.animation_index = (self.animation_index + 1) % len(self.animation_chars)
