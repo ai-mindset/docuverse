@@ -54,8 +54,14 @@ class CustomCTkEntry(ctk.CTkEntry):
         if cursor_pos == 0:
             return "break"  # Nothing to delete
 
-        # Find the start of the current word
+        # Find the start of the current word or skip leading spaces
         i = cursor_pos - 1
+
+        # First, skip any spaces immediately before the cursor
+        while i >= 0 and content[i].isspace():
+            i -= 1
+
+        # Then find the start of the word
         while i >= 0 and not content[i].isspace():
             i -= 1
 
