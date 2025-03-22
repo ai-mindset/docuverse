@@ -45,7 +45,7 @@ class Settings(BaseModel):
     SQLITE_DB_PATH: str = Field(default="db/books.db")
     DOCS_DIR: str = Field(default="docs")
     CLIENT: Client = Field(default=Client(host="http://localhost:11434"))
-    LLM_MODEL: str = Field(default="mistral")
+    LLM_MODEL: str = Field(default="mistral-nemo")
 
     PROMPTS_DICT: dict[str, str] = prompts.prompts_dict
 
@@ -65,7 +65,7 @@ class Settings(BaseModel):
 
     GUI_FONT: Mapping[str, int | str] = Field(
         default={
-            "size": 18,
+            "size": 22,
             "weight": "bold",
         }
     )

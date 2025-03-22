@@ -76,7 +76,7 @@ class QAChain:
                 Chat History:
                 {chat_history}
                 
-                Answer the user's question based on the context provided. Don't repeat any of the instructions or context in your response.""",
+                Answer the user's question based on the context provided. Don't repeat any of the instructions or context in your response. Only respond with an accurate answer to the user's question and nothing else.""",
                 ),
                 MessagesPlaceholder(variable_name="chat_history"),
                 ("human", "{question}"),
