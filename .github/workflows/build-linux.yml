@@ -137,7 +137,7 @@ jobs:
         run: |
           source .venv/bin/activate
           # Build with verbose output and clean build directory
-          python -m PyInstaller --clean dv.spec
+          python -m PyInstaller --clean docuverse.spec
       
       - name: Verify built binary
         run: |
@@ -170,7 +170,7 @@ jobs:
           # Create desktop file
           cat > AppDir/usr/share/applications/docuverse.desktop << EOF
           [Desktop Entry]
-          Name=dv
+          Name=docuverse
           Comment=Q&A app for easy information retrieval from documents
           Exec=docuverse
           Icon=docuverse
@@ -197,10 +197,10 @@ jobs:
       - name: Test AppImage
         run: |
           # Make AppImage executable
-          chmod +x dv-${{ env.VERSION }}-x86_64.AppImage
+          chmod +x docuverse-${{ env.VERSION }}-x86_64.AppImage
           
           # Extract AppImage to verify contents (without running)
-          ./dv-${{ env.VERSION }}-x86_64.AppImage --appimage-extract
+          ./docuverse-${{ env.VERSION }}-x86_64.AppImage --appimage-extract
           
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -218,7 +218,7 @@ jobs:
           if [[ $GITHUB_REF == refs/tags/* ]]; then
             echo "IS_TAG=true" >> $GITHUB_ENV
             echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
-            echo "RELEASE_NAME=dv ${{ env.VERSION }}" >> $GITHUB_ENV
+            echo "RELEASE_NAME=docuverse ${{ env.VERSION }}" >> $GITHUB_ENV
             echo "SHOULD_RELEASE=true" >> $GITHUB_ENV
             echo "Running on tag: $GITHUB_REF, tag name: ${GITHUB_REF#refs/tags/}"
           # For pull requests
@@ -232,7 +232,7 @@ jobs:
           else
             echo "IS_TAG=false" >> $GITHUB_ENV
             echo "TAG_NAME=dev-${CURRENT_DATE}" >> $GITHUB_ENV
-            echo "RELEASE_NAME=dv ${{ env.VERSION }} (Development Build)" >> $GITHUB_ENV
+            echo "RELEASE_NAME=docuverse ${{ env.VERSION }} (Development Build)" >> $GITHUB_ENV
             echo "PRERELEASE=true" >> $GITHUB_ENV
             echo "SHOULD_RELEASE=true" >> $GITHUB_ENV
             echo "Running on branch: $GITHUB_REF"
@@ -242,9 +242,9 @@ jobs:
         if: env.SHOULD_RELEASE == 'true'
         run: |
           cat > release_notes.md << EOF
-          # dv Q&A App Release v${{ env.VERSION }}
+          # docuverse Q&A App Release v${{ env.VERSION }}
           
-          This release provides the Linux AppImage for dv, a Q&A application for easy information retrieval from documents of interest.
+          This release provides the Linux AppImage for docuverse, a Q&A application for easy information retrieval from documents of interest.
           
           ## Installation
           1. Download the AppImage
