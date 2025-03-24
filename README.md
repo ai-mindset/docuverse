@@ -4,6 +4,107 @@
 
 A self-hosted, privacy-preserving Question & Answer application for easy information retrieval from your personal document collection. DocuVerse (a blend of "Document" and "Converse") helps you interact with your documents through natural language queries, providing contextually relevant answers powered by language models—all while keeping your data completely private on your local machine.
 
+## System Architecture
+
+### Component Structure
+```mermaid
+%%{init: { 'themeVariables': { 'darkMode': true }, 'theme': 'base' }}%%
+flowchart TB
+    User([User]) --- UI[/GUI/CLI Interface\]
+    
+    subgraph DocuVerse ["DocuVerse System"]
+        UI --- Document_Processing
+        UI --- Retrieval_QA
+        Document_Processing --- Storage
+        Retrieval_QA --- Storage
+        Retrieval_QA --- External
+        
+        subgraph Document_Processing ["Document Processing"]
+            TextSplitter[(Text Splitter)]
+            Embeddings["Nomic Embeddings"]
+            TextSplitter --> Embeddings
+        end
+        
+        subgraph Storage ["Data Storage"]
+            SQLite[(SQLite Database)]
+        end
+        
+        subgraph Retrieval_QA ["Retrieval & QA"]
+            VectorSearch{{Vector Search}}
+            QAChain{{QA Chain}}
+            VectorSearch --> QAChain
+        end
+        
+        subgraph External ["External Services"]
+            Ollama["Ollama LLM (Mistral)"]
+        end
+    end
+    
+    %% Dark Mode Colors
+    classDef interfaceDark fill:#6E40C9,stroke:#d6d8db,stroke-width:2px,stroke-dasharray:5 5,color:#FFFFFF
+    classDef storageDark fill:#0366D6,stroke:#d6d8db,stroke-width:2px,color:#FFFFFF
+    classDef processingDark fill:#28A745,stroke:#d6d8db,stroke-width:2px,color:#000000
+    classDef externalDark fill:#D73A49,stroke:#d6d8db,stroke-width:3px,color:#FFFFFF
+    
+    %% Light Mode Colors
+    classDef interfaceLight fill:#8A63D2,stroke:#24292e,stroke-width:2px,stroke-dasharray:5 5,color:#FFFFFF
+    classDef storageLight fill:#2188FF,stroke:#24292e,stroke-width:2px,color:#FFFFFF
+    classDef processingLight fill:#22863A,stroke:#24292e,stroke-width:2px,color:#FFFFFF
+    classDef externalLight fill:#CB2431,stroke:#24292e,stroke-width:3px,color:#FFFFFF
+    
+    %% Apply classes conditionally based on theme
+    class UI interfaceDark
+    class SQLite storageDark
+    class TextSplitter,Embeddings,VectorSearch,QAChain processingDark
+    class Ollama externalDark
+```
+
+### Data flow 
+```mermaid
+%%{init: { 'themeVariables': { 'darkMode': false }, 'theme': 'base' }}%%
+flowchart TB
+    User([User]) --- UI[/GUI/CLI Interface\]
+    
+    subgraph DocuVerse ["DocuVerse System"]
+        UI --- Document_Processing
+        UI --- Retrieval_QA
+        Document_Processing --- Storage
+        Retrieval_QA --- Storage
+        Retrieval_QA --- External
+        
+        subgraph Document_Processing ["Document Processing"]
+            TextSplitter[(Text Splitter)]
+            Embeddings["Nomic Embeddings"]
+            TextSplitter --> Embeddings
+        end
+        
+        subgraph Storage ["Data Storage"]
+            SQLite[(SQLite Database)]
+        end
+        
+        subgraph Retrieval_QA ["Retrieval & QA"]
+            VectorSearch{{Vector Search}}
+            QAChain{{QA Chain}}
+            VectorSearch --> QAChain
+        end
+        
+        subgraph External ["External Services"]
+            Ollama["Ollama LLM (Mistral)"]
+        end
+    end
+    
+    %% Apply Light Mode Classes
+    classDef interfaceLight fill:#8A63D2,stroke:#24292e,stroke-width:2px,stroke-dasharray:5 5,color:#FFFFFF
+    classDef storageLight fill:#2188FF,stroke:#24292e,stroke-width:2px,color:#FFFFFF
+    classDef processingLight fill:#22863A,stroke:#24292e,stroke-width:2px,color:#FFFFFF
+    classDef externalLight fill:#CB2431,stroke:#24292e,stroke-width:3px,color:#FFFFFF
+    
+    class UI interfaceLight
+    class SQLite storageLight
+    class TextSplitter,Embeddings,VectorSearch,QAChain processingLight
+    class Ollama externalLight
+```
+
 ## Features
 
 - **Interactive Q&A**: Ask questions about your documents in natural language
@@ -20,14 +121,14 @@ A self-hosted, privacy-preserving Question & Answer application for easy informa
 - Download the [mistral 7b](https://ollama.com/library/mistral) LLM with `ollama pull mistral` if you have a mainstream computer. Opt for [mistral-small 24b](https://ollama.com/library/mistral-small:24b) if you have a higher-end setup (run `ollama run mistral-small:24b`)
 
 ### Method 1: Using AppImage (Linux)
-1. Download the latest AppImage from the [Releases](https://github.com/yourusername/docuverse/releases) page
+1. Download the latest AppImage from the [Releases](https://github.com/ai-mindset/docuverse/releases) page
 2. Make it executable: `chmod +x dv-*-x86_64.AppImage`
 3. Run the application: `./dv-*-x86_64.AppImage`
 
 ### Method 2: From Source
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/docuverse.git
+git clone https://github.com/ai-mindset/docuverse.git
 cd docuverse
 
 # Install using uv (recommended)
