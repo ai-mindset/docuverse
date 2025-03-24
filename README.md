@@ -121,14 +121,14 @@ flowchart TB
 - Download the [mistral 7b](https://ollama.com/library/mistral) LLM with `ollama pull mistral` if you have a mainstream computer. Opt for [mistral-small 24b](https://ollama.com/library/mistral-small:24b) if you have a higher-end setup (run `ollama run mistral-small:24b`)
 
 ### Method 1: Using AppImage (Linux)
-1. Download the latest AppImage from the [Releases](https://github.com/yourusername/docuverse/releases) page
+1. Download the latest AppImage from the [Releases](https://github.com/ai-mindset/docuverse/releases) page
 2. Make it executable: `chmod +x dv-*-x86_64.AppImage`
 3. Run the application: `./dv-*-x86_64.AppImage`
 
 ### Method 2: From Source
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/docuverse.git
+git clone https://github.com/ai-mindset/docuverse.git
 cd docuverse
 
 # Install using uv (recommended)
