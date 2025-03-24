@@ -58,28 +58,39 @@ class QAChain:
         # Define the context retriever
         retriever = self._get_retriever()
 
-        # Define the system prompt template
-        system_template = settings.SYS_PROMPT
-        system_template += """
-            Context: {context} 
-            Chat History: {chat_history}
-            Question: {question}
-        """
-
+        # CRITICAL FIX: Move the system prompt content into a "instructions" variable
+        # in the template instead of directly in the system message.
+        # This prevents the LLM from treating it as content to be repeated.
         prompt = ChatPromptTemplate.from_messages(
             [
-                ("system", system_template),
+                (
+                    "system",
+                    """You are a helpful assistant that follows these instructions:
+                
+                {instructions}
+                
+                The context below contains information to help answer the question:
+                
+                {context}
+                
+                Chat History:
+                {chat_history}
+                
+                Answer the user's question based on the context provided. Don't repeat any of the instructions or context in your response. Only respond with an accurate answer to the user's question and nothing else.""",
+                ),
                 MessagesPlaceholder(variable_name="chat_history"),
                 ("human", "{question}"),
             ]
         )
 
-        # Build the chain
+        # Build the chain with the system prompt as a separate variable
         qa_chain = (
             {
                 "context": retriever,
                 "question": RunnablePassthrough(),
                 "chat_history": lambda _: self.chat_history,
+                # Pass the system prompt as "instructions" rather than directly in the message
+                "instructions": lambda _: settings.SYS_PROMPT,
             }
             | prompt
             | self.llm
@@ -99,13 +110,17 @@ class QAChain:
         def retrieve_and_format(query: str) -> str:
             """Retrieve similar documents and format them as context."""
             docs = self.vectorstore.similarity_search(query=query, k=self.k)
+
+            if not docs:
+                return "No relevant information found in the knowledge base."
+
             formatted_docs = []
 
             for i, doc in enumerate(docs, 1):
                 source = doc.metadata.get("source", "Unknown")
                 similarity = doc.metadata.get("similarity", 0.0)
                 text = doc.page_content.strip()
-                formatted = f"Document {i} (Source: {source}, Relevance: {similarity:.2f}):\n{text}\n"
+                formatted = f"[Document {i}]\nSource: {source}\nRelevance: {similarity:.2f}\nContent:\n{text}\n"
                 formatted_docs.append(formatted)
 
             return "\n".join(formatted_docs)
