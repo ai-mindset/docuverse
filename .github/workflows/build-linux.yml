@@ -159,7 +159,7 @@ jobs:
           mkdir -p AppDir/usr/{bin,share/{applications,icons/hicolor/256x256/apps}}
           
           # Copy the binary
-          cp dist/docuverse AppDir/usr/bin/
+          cp dist/docuverse-${{ env.VERSION }}-linux AppDir/usr/bin/docuverse
           chmod +x AppDir/usr/bin/docuverse
           
           # Create icon
