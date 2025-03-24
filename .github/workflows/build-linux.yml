@@ -54,14 +54,6 @@ jobs:
           mkdir -p docs
           mkdir -p db
           
-          # Verify prompts directory
-          if [ ! -d "prompts" ]; then
-            echo "ERROR: prompts directory not found in repository"
-            exit 1
-          fi
-          echo "Prompts directory exists with contents:"
-          ls -la prompts/
-      
       - name: Extract version from pyproject.toml
         id: get_version
         run: |
@@ -88,13 +80,6 @@ jobs:
           langchain_datas, langchain_binaries, langchain_hiddenimports = collect_all('langchain_ollama')
           langchain_core_datas, langchain_core_binaries, langchain_core_hiddenimports = collect_all('langchain_core')
           
-          # Recursively include all files from prompts directory
-          prompts_files = []
-          for root, dirs, files in os.walk('prompts'):
-              for file in files:
-                  file_path = os.path.join(root, file)
-                  prompts_files.append((file_path, root))
-          
           # Ensure that docs and db directories exist
           os.makedirs('docs', exist_ok=True)
           os.makedirs('db', exist_ok=True)
@@ -104,7 +89,6 @@ jobs:
               pathex=[],
               binaries=[*pydantic_binaries, *langchain_binaries, *langchain_core_binaries],
               datas=[
-                  *prompts_files,
                   ('docs', 'docs'),
                   ('db', 'db'),
                   *pydantic_datas,
@@ -151,10 +135,6 @@ jobs:
           # Build with PyInstaller
           python -m PyInstaller --clean docuverse.spec
           
-          # Verify the build
-          echo "Checking if prompts directory was included in the build:"
-          find dist -name "*.md" | grep -i prompts || echo "No prompt files found in the build"
-      
       - name: Create AppDir
         run: |
           # Create basic AppDir structure
@@ -203,10 +183,6 @@ jobs:
           # Extract AppImage to verify contents (without running)
           ./dv-${{ env.VERSION }}-x86_64.AppImage --appimage-extract
           
-          # Check for prompt files in the extracted AppImage
-          echo "Checking for prompt files in the AppImage:"
-          find squashfs-root -name "*.md" | grep -i prompts || echo "No prompt files found in the AppImage"
-      
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
