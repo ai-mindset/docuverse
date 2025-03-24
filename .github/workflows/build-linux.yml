@@ -264,6 +264,7 @@ jobs:
           fi
       
       - name: Create GitHub Release
+        if: env.SHOULD_RELEASE == 'true'
         uses: softprops/action-gh-release@v1
         with:
           files: docuverse-${{ env.VERSION }}-x86_64.AppImage
@@ -271,6 +272,6 @@ jobs:
           tag_name: ${{ env.TAG_NAME }}
           body_path: release_notes.md
           draft: false
-          prerelease: false
+          prerelease: ${{ env.PRERELEASE == 'true' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
