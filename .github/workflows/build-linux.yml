@@ -143,7 +143,7 @@ jobs:
               a.zipfiles,
               a.datas,
               [],
-              name='dv-${{ env.VERSION }}-linux',
+              name='docuverse-${{ env.VERSION }}-linux',
               debug=False,
               bootloader_ignore_signals=False,
               strip=False,
@@ -168,16 +168,16 @@ jobs:
       - name: Verify built binary
         run: |
           # Check if binary was created successfully
-          if [ ! -f "dist/dv-${{ env.VERSION }}-linux" ]; then
+          if [ ! -f "dist/docuverse-${{ env.VERSION }}-linux" ]; then
             echo "ERROR: PyInstaller failed to create the binary!"
             exit 1
           fi
           
           # Check some basic properties of the binary
-          file "dist/dv-${{ env.VERSION }}-linux"
+          file "dist/docuverse-${{ env.VERSION }}-linux"
           
           # Run ldd to check library dependencies
-          ldd "dist/dv-${{ env.VERSION }}-linux" || true
+          ldd "dist/docuverse-${{ env.VERSION }}-linux" || true
           
       - name: Create AppDir structure
         run: |
@@ -190,7 +190,7 @@ jobs:
           mkdir -p AppDir/usr/share/dv/prompts
           
           # Copy the binary
-          cp dist/dv-${{ env.VERSION }}-linux AppDir/usr/bin/dv
+          cp dist/docuverse-${{ env.VERSION }}-linux AppDir/usr/bin/dv
           chmod +x AppDir/usr/bin/dv
           
           # Create desktop file
@@ -253,13 +253,13 @@ jobs:
       - name: Build AppImage
         run: |
           # Set the architecture explicitly
-          ARCH=x86_64 ./appimagetool AppDir "dv-${{ env.VERSION }}-x86_64.AppImage"
+          ARCH=x86_64 ./appimagetool AppDir "docuverse-${{ env.VERSION }}-x86_64.AppImage"
       
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: dv-linux
-          path: dv-${{ env.VERSION }}-x86_64.AppImage
+          name: docuverse-linux
+          path: docuverse-${{ env.VERSION }}-x86_64.AppImage
           
       - name: Set release info
         id: release_info
@@ -301,8 +301,8 @@ jobs:
           
           ## Installation
           1. Download the AppImage
-          2. Make it executable: \`chmod +x dv-${{ env.VERSION }}-x86_64.AppImage\`
-          3. Run it: \`./dv-${{ env.VERSION }}-x86_64.AppImage\`
+          2. Make it executable: \`chmod +x docuverse-${{ env.VERSION }}-x86_64.AppImage\`
+          3. Run it: \`./docuverse-${{ env.VERSION }}-x86_64.AppImage\`
           EOF
           
           if [[ $GITHUB_REF != refs/tags/* ]]; then
@@ -320,7 +320,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         if: env.SHOULD_RELEASE == 'true'
         with:
-          files: dv-${{ env.VERSION }}-x86_64.AppImage
+          files: docuverse-${{ env.VERSION }}-x86_64.AppImage
           name: ${{ env.RELEASE_NAME }}
           tag_name: ${{ env.TAG_NAME }}
           body_path: release_notes.md
