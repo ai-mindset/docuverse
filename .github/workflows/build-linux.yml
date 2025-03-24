@@ -119,7 +119,8 @@ jobs:
               a.binaries,
               a.zipfiles,
               a.datas,
-              name='docuverse',
+              [],
+              name='docuverse-${{ env.VERSION }}-linux',
               debug=False,
               strip=False,
               upx=True,
@@ -131,17 +132,34 @@ jobs:
               entitlements_file=None,
           )
           EOF
-          
-          # Build with PyInstaller
+
+      - name: Build with PyInstaller
+        run: |
+          source .venv/bin/activate
+          # Build with verbose output and clean build directory
           python -m PyInstaller --clean docuverse.spec
+      
+      - name: Verify built binary
+        run: |
+          # Check if binary was created successfully
+          if [ ! -f "dist/docuverse-${{ env.VERSION }}-linux" ]; then
+            echo "ERROR: PyInstaller failed to create the binary!"
+            exit 1
+          fi
           
-      - name: Create AppDir
+          # Check some basic properties of the binary
+          file "dist/docuverse-${{ env.VERSION }}-linux"
+          
+          # Run ldd to check library dependencies
+          ldd "dist/docuverse-${{ env.VERSION }}-linux" || true
+          
+      - name: Create AppDir structure
         run: |
           # Create basic AppDir structure
           mkdir -p AppDir/usr/{bin,share/{applications,icons/hicolor/256x256/apps}}
           
           # Copy the binary
-          cp dist/docuverse AppDir/usr/bin/
+          cp dist/docuverse-${{ env.VERSION }}-linux AppDir/usr/bin/docuverse
           chmod +x AppDir/usr/bin/docuverse
           
           # Create icon
@@ -152,7 +170,7 @@ jobs:
           # Create desktop file
           cat > AppDir/usr/share/applications/docuverse.desktop << EOF
           [Desktop Entry]
-          Name=dv
+          Name=docuverse
           Comment=Q&A app for easy information retrieval from documents
           Exec=docuverse
           Icon=docuverse
@@ -173,38 +191,87 @@ jobs:
       
       - name: Build AppImage
         run: |
-          ARCH=x86_64 ./appimagetool AppDir "dv-${{ env.VERSION }}-x86_64.AppImage"
+          # Set the architecture explicitly
+          ARCH=x86_64 ./appimagetool AppDir "docuverse-${{ env.VERSION }}-x86_64.AppImage"
       
       - name: Test AppImage
         run: |
           # Make AppImage executable
-          chmod +x dv-${{ env.VERSION }}-x86_64.AppImage
+          chmod +x docuverse-${{ env.VERSION }}-x86_64.AppImage
           
           # Extract AppImage to verify contents (without running)
-          ./dv-${{ env.VERSION }}-x86_64.AppImage --appimage-extract
+          ./docuverse-${{ env.VERSION }}-x86_64.AppImage --appimage-extract
           
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: docuverse-linux
-          path: dv-${{ env.VERSION }}-x86_64.AppImage
+          path: docuverse-${{ env.VERSION }}-x86_64.AppImage
+          
+      - name: Set release info
+        id: release_info
+        run: |
+          # Get current date for development builds
+          CURRENT_DATE=$(date +%Y%m%d-%H%M%S)
+          
+          # For tag-based releases
+          if [[ $GITHUB_REF == refs/tags/* ]]; then
+            echo "IS_TAG=true" >> $GITHUB_ENV
+            echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+            echo "RELEASE_NAME=docuverse ${{ env.VERSION }}" >> $GITHUB_ENV
+            echo "SHOULD_RELEASE=true" >> $GITHUB_ENV
+            echo "Running on tag: $GITHUB_REF, tag name: ${GITHUB_REF#refs/tags/}"
+          # For pull requests
+          elif [[ $GITHUB_REF == refs/pull/* ]]; then
+            PR_NUMBER=$(echo $GITHUB_REF | cut -d'/' -f3)
+            echo "IS_TAG=false" >> $GITHUB_ENV
+            # Don't try to create a release or tag for PRs, but upload to artifacts
+            echo "SHOULD_RELEASE=false" >> $GITHUB_ENV
+            echo "Running on PR: $GITHUB_REF, PR number: $PR_NUMBER"
+          # For push to main
+          else
+            echo "IS_TAG=false" >> $GITHUB_ENV
+            echo "TAG_NAME=dev-${CURRENT_DATE}" >> $GITHUB_ENV
+            echo "RELEASE_NAME=docuverse ${{ env.VERSION }} (Development Build)" >> $GITHUB_ENV
+            echo "PRERELEASE=true" >> $GITHUB_ENV
+            echo "SHOULD_RELEASE=true" >> $GITHUB_ENV
+            echo "Running on branch: $GITHUB_REF"
+          fi
       
-      - name: Create Release
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Generate release notes
+        if: env.SHOULD_RELEASE == 'true'
+        run: |
+          cat > release_notes.md << EOF
+          # docuverse Q&A App Release v${{ env.VERSION }}
+          
+          This release provides the Linux AppImage for docuverse, a Q&A application for easy information retrieval from documents of interest.
+          
+          ## Installation
+          1. Download the AppImage
+          2. Make it executable: \`chmod +x docuverse-${{ env.VERSION }}-x86_64.AppImage\`
+          3. Run it: \`./docuverse-${{ env.VERSION }}-x86_64.AppImage\`
+          EOF
+          
+          if [[ $GITHUB_REF != refs/tags/* ]]; then
+            cat >> release_notes.md << EOF
+          
+          ## Development Build
+          This is an automated development build, not an official release.
+          - Build triggered by: $GITHUB_REF
+          - Build date: $(date)
+          - Commit: $GITHUB_SHA
+          EOF
+          fi
+      
+      - name: Create GitHub Release
+        if: env.SHOULD_RELEASE == 'true'
         uses: softprops/action-gh-release@v1
         with:
-          files: dv-${{ env.VERSION }}-x86_64.AppImage
-          name: dv ${{ env.VERSION }}
-          body: |
-            dv Q&A App Release v${{ env.VERSION }}
-            
-            This release provides the Linux AppImage for dv, a Q&A application for easy information retrieval from documents.
-            
-            ## Installation
-            1. Download the AppImage
-            2. Make it executable: `chmod +x dv-${{ env.VERSION }}-x86_64.AppImage`
-            3. Run it: `./dv-${{ env.VERSION }}-x86_64.AppImage`
+          files: docuverse-${{ env.VERSION }}-x86_64.AppImage
+          name: ${{ env.RELEASE_NAME }}
+          tag_name: ${{ env.TAG_NAME }}
+          body_path: release_notes.md
           draft: false
-          prerelease: false
+          prerelease: ${{ env.PRERELEASE == 'true' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
