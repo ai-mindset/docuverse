@@ -1,6 +1,5 @@
 """Command-line interface for interacting with the document Q&A system."""
 
-import argparse
 import sys
 
 from dv.config import settings
@@ -13,7 +12,7 @@ logger = setup_logging(settings.log_level)
 
 
 # %%
-def main(args=None) -> None:
+def main(args=None) -> int:
     """Run the interactive Q&A system."""
     # Use provided args or parse them if not provided
     # Check if no arguments were passed
@@ -67,7 +66,7 @@ def main(args=None) -> None:
 
         except KeyboardInterrupt:
             print("\nGoodbye!")
-            break
+            return 0
         except Exception as e:
             logger.error(f"Error in CLI: {str(e)}")
             print(f"An error occurred: {str(e)}")

@@ -5,7 +5,6 @@ import glob
 import os
 import re
 import sqlite3
-from pathlib import Path
 
 import numpy as np
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -121,7 +120,7 @@ def save_document(conn: sqlite3.Connection, file_path: str, table_name: str) -> 
 
     Args:
         conn: SQLite connection.
-        file_path: Path to the document file.
+        file_path: Path string to the document file.
         table_name: Name of the table to save document to.
 
     Returns:

@@ -2,30 +2,28 @@
 
 # %%
 import argparse
-import os
-import sys
 import threading
 import tkinter as tk
-from collections.abc import Mapping
 from pathlib import Path
-from tkinter import messagebox
+from tkinter import filedialog, messagebox
+from typing import Literal
 
 import customtkinter as ctk
+import ipdb
 
 # %%
-from dv.config import settings
+from dv.config import WeightLiteral, settings
 from dv.database import process_all_documents
 from dv.logger import setup_logging
 from dv.qa import create_qa_chain
 
-# Add GUI font settings to config if not present
-if not hasattr(settings, "GUI_FONT"):
-    settings.GUI_FONT = {"size": 16, "weight": "bold"}
-
 # Extract font settings
 font_size = settings.GUI_FONT["size"]
-font_weight = settings.GUI_FONT["weight"]
-
+weight_value = settings.GUI_FONT["weight"]
+if weight_value == "normal" or weight_value == "bold":
+    font_weight: WeightLiteral = weight_value
+else:
+    font_weight: WeightLiteral = "bold"  # Default value
 
 # %%
 logger = setup_logging(settings.log_level)
@@ -45,7 +43,7 @@ class CustomCTkEntry(ctk.CTkEntry):
             "<Control-w>", self._delete_word
         )  # Also common shortcut in many editors
 
-    def _delete_word(self, event):
+    def _delete_word(self):
         """Delete the word before the cursor."""
         # Get current content and cursor position
         content = self.get()
@@ -83,7 +81,7 @@ class QAApplication:
         self.root.geometry("1000x750")
         self.root.minsize(800, 600)
 
-        # Set appearance mode and default color theme
+        # Set appearance mode and default colour theme
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("blue")
 
@@ -142,7 +140,7 @@ class QAApplication:
         """Create top button panel."""
         button_frame = ctk.CTkFrame(self.main_frame)
         button_frame.grid(row=0, column=0, sticky="ew", pady=(0, 10))
-
+        ipdb.set_trace()
         # Add document button
         self.add_doc_btn = ctk.CTkButton(
             button_frame,
@@ -196,7 +194,7 @@ class QAApplication:
         )
         self.chat_display.grid(row=1, column=0, sticky="nsew", padx=10, pady=(0, 10))
 
-        # Configure tag colors - need to use tag_config for textbox
+        # Configure tag colours - need to use tag_config for textbox
         self.chat_display.tag_config("user", foreground="#3a7ebf")
         self.chat_display.tag_config("ai", foreground="#e74c3c")
         self.chat_display.tag_config("system", foreground="#95a5a6")
@@ -423,7 +421,7 @@ class QAApplication:
     def add_document(self):
         """Add a document to the system."""
         filetypes = [("Text files", "*.txt"), ("Markdown files", "*.md")]
-        file_path = tk.filedialog.askopenfilename(
+        file_path = filedialog.askopenfilename(
             title="Select Document", filetypes=filetypes
         )
 
