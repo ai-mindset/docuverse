@@ -231,15 +231,15 @@ jobs:
         run: |
           $executablePath = "dist\docuverse-${{ env.VERSION }}-win64.exe"
           if (Test-Path $executablePath) {
-            # Include README or any other necessary files
             $zipPath = "dist\docuverse-${{ env.VERSION }}-win64.zip"
             Compress-Archive -Path $executablePath -DestinationPath $zipPath -Force
-            echo "ZIP_PATH=$zipPath" | Out-File -FilePath $env:GITHUB_ENV -Append
-            echo "BUILD_SUCCESS=true" | Out-File -FilePath $env:GITHUB_ENV -Append
-            Write-Host "✓ ZIP archive created successfully at $zipPath"
+            Write-Host "::set-output name=zip_path::$zipPath"
+            echo "ZIP_PATH=$zipPath" >> $env:GITHUB_ENV
+            echo "BUILD_SUCCESS=true" >> $env:GITHUB_ENV
+            Write-Host "ZIP created successfully at: $zipPath"
           } else {
-            Write-Error "No executable found in dist\"
-            echo "BUILD_SUCCESS=false" | Out-File -FilePath $env:GITHUB_ENV -Append
+            Write-Error "No executable found at: $executablePath"
+            echo "BUILD_SUCCESS=false" >> $env:GITHUB_ENV
           }
       
       - name: Upload artifact
@@ -259,31 +259,36 @@ jobs:
           # For tag-based releases
           if ($env:GITHUB_REF -match "^refs/tags/v") {
             $tagName = $env:GITHUB_REF -replace "^refs/tags/", ""
-            echo "IS_TAG=true" | Out-File -FilePath $env:GITHUB_ENV -Append
-            echo "TAG_NAME=$tagName" | Out-File -FilePath $env:GITHUB_ENV -Append
-            echo "RELEASE_NAME=docuverse ${{ env.VERSION }}" | Out-File -FilePath $env:GITHUB_ENV -Append
-            echo "SHOULD_RELEASE=true" | Out-File -FilePath $env:GITHUB_ENV -Append
+            echo "IS_TAG=true" >> $env:GITHUB_ENV
+            echo "TAG_NAME=$tagName" >> $env:GITHUB_ENV
+            echo "RELEASE_NAME=docuverse ${{ env.VERSION }}" >> $env:GITHUB_ENV
+            echo "SHOULD_RELEASE=true" >> $env:GITHUB_ENV
             Write-Host "Running on tag: $env:GITHUB_REF, tag name: $tagName"
           }
           # For pull requests
           elseif ($env:GITHUB_REF -match "^refs/pull/") {
             $prNumber = $env:GITHUB_REF -replace "^refs/pull/(\d+)/.*", '$1'
-            echo "IS_TAG=false" | Out-File -FilePath $env:GITHUB_ENV -Append
-            echo "SHOULD_RELEASE=false" | Out-File -FilePath $env:GITHUB_ENV -Append
+            echo "IS_TAG=false" >> $env:GITHUB_ENV
+            echo "SHOULD_RELEASE=false" >> $env:GITHUB_ENV
             Write-Host "Running on PR: $env:GITHUB_REF, PR number: $prNumber"
           }
           # For push to main
           else {
-            echo "IS_TAG=false" | Out-File -FilePath $env:GITHUB_ENV -Append
-            echo "TAG_NAME=dev-${currentDate}" | Out-File -FilePath $env:GITHUB_ENV -Append
-            echo "RELEASE_NAME=docuverse ${{ env.VERSION }} (Development Build)" | Out-File -FilePath $env:GITHUB_ENV -Append
-            echo "PRERELEASE=true" | Out-File -FilePath $env:GITHUB_ENV -Append
-            echo "SHOULD_RELEASE=true" | Out-File -FilePath $env:GITHUB_ENV -Append
+            echo "IS_TAG=false" >> $env:GITHUB_ENV
+            echo "TAG_NAME=dev-${currentDate}" >> $env:GITHUB_ENV
+            echo "RELEASE_NAME=docuverse ${{ env.VERSION }} (Development Build)" >> $env:GITHUB_ENV
+            echo "PRERELEASE=true" >> $env:GITHUB_ENV
+            echo "SHOULD_RELEASE=true" >> $env:GITHUB_ENV
             Write-Host "Running on branch: $env:GITHUB_REF"
           }
+          
+          # Always output the release status for debugging
+          Write-Host "SHOULD_RELEASE: $env:SHOULD_RELEASE"
+          Write-Host "BUILD_SUCCESS: $env:BUILD_SUCCESS"
+          Write-Host "ZIP_PATH: $env:ZIP_PATH"
       
       - name: Generate release notes
-        if: env.SHOULD_RELEASE == 'true' && env.BUILD_SUCCESS == 'true'
+        if: ${{ env.SHOULD_RELEASE == 'true' && env.BUILD_SUCCESS == 'true' }}
         shell: pwsh
         run: |
           $releaseNotesContent = @"
@@ -313,9 +318,20 @@ jobs:
           }
           
           $releaseNotesContent | Out-File -FilePath "release_notes.md" -Encoding utf8
+          Write-Host "Release notes generated successfully"
+      
+      - name: Debug release variables
+        shell: pwsh
+        run: |
+          Write-Host "SHOULD_RELEASE: $env:SHOULD_RELEASE"
+          Write-Host "BUILD_SUCCESS: $env:BUILD_SUCCESS"
+          Write-Host "ZIP_PATH: $env:ZIP_PATH"
+          Write-Host "TAG_NAME: $env:TAG_NAME"
+          Write-Host "RELEASE_NAME: $env:RELEASE_NAME"
+          Write-Host "File exists check for ZIP: $(Test-Path $env:ZIP_PATH)"
       
       - name: Create GitHub Release
-        if: env.SHOULD_RELEASE == 'true' && env.BUILD_SUCCESS == 'true'
+        if: ${{ env.SHOULD_RELEASE == 'true' && env.BUILD_SUCCESS == 'true' }}
         uses: softprops/action-gh-release@v1
         with:
           files: ${{ env.ZIP_PATH }}
