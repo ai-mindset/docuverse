@@ -1,0 +1,325 @@
+name: Build Windows Executable
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'  # Also run when a tag is pushed that starts with 'v'
+
+permissions:
+  contents: write
+  packages: read
+  
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      
+      - name: Install uv - Windows
+        shell: pwsh
+        run: |
+          # Install uv using PowerShell for Windows
+          iwr https://astral.sh/uv/install.ps1 -useb | iex
+          # Add to PATH
+          echo "$env:USERPROFILE\.cargo\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+      
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          # Create and activate virtual environment using uv
+          uv venv
+          & .\.venv\Scripts\Activate.ps1
+          # Install project and build requirements
+          uv pip install -e .
+          uv pip install "pyinstaller>=6.1.0" toml
+      
+      - name: Prepare directories
+        shell: pwsh
+        run: |
+          # Create required directories if they don't exist
+          New-Item -Path "docs" -ItemType Directory -Force
+          New-Item -Path "db" -ItemType Directory -Force
+          
+      - name: Extract version from pyproject.toml
+        id: get_version
+        shell: pwsh
+        run: |
+          & .\.venv\Scripts\Activate.ps1
+          $VERSION = python -c "import toml; print(toml.load('pyproject.toml')['project']['version'])"
+          echo "VERSION=$VERSION" | Out-File -FilePath $env:GITHUB_ENV -Append
+          Write-Host "Version: $VERSION"
+      
+      - name: Create PyInstaller spec
+        shell: pwsh
+        run: |
+          $specContent = @"
+          # -*- mode: python ; coding: utf-8 -*-
+          import os
+          import sys
+          from PyInstaller.utils.hooks import collect_all
+
+          block_cipher = None
+
+          # Collect dependencies
+          pydantic_datas, pydantic_binaries, pydantic_hiddenimports = collect_all('pydantic')
+          langchain_datas, langchain_binaries, langchain_hiddenimports = collect_all('langchain_ollama')
+          langchain_core_datas, langchain_core_binaries, langchain_core_hiddenimports = collect_all('langchain_core')
+          
+          # Ensure that docs and db directories exist
+          os.makedirs('docs', exist_ok=True)
+          os.makedirs('db', exist_ok=True)
+
+          a = Analysis(
+              ['src/dv/main.py'],
+              pathex=[],
+              binaries=[*pydantic_binaries, *langchain_binaries, *langchain_core_binaries],
+              datas=[
+                  ('docs', 'docs'),
+                  ('db', 'db'),
+                  *pydantic_datas,
+                  *langchain_datas,
+                  *langchain_core_datas,
+              ],
+              hiddenimports=[
+                  *pydantic_hiddenimports,
+                  *langchain_hiddenimports,
+                  *langchain_core_hiddenimports,
+                  'numpy',
+                  'ollama',
+                  'customtkinter',
+                  'tkinter',
+                  '_tkinter',
+                  'PIL',
+                  'PIL._tkinter_finder',
+                  'langchain_community.vectorstores',
+                  'langchain_community.embeddings',
+              ],
+              hookspath=[],
+              hooksconfig={},
+              runtime_hooks=[],
+              excludes=[],
+              cipher=block_cipher,
+              noarchive=False,
+          )
+
+          pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+
+          exe = EXE(
+              pyz,
+              a.scripts,
+              a.binaries,
+              a.zipfiles,
+              a.datas,
+              [],
+              name='docuverse-${{ env.VERSION }}-win64',
+              debug=False,
+              bootloader_ignore_signals=False,
+              strip=False,
+              upx=True,
+              upx_exclude=[],
+              runtime_tmpdir=None,
+              console=True,
+              disable_windowed_traceback=False,
+              argv_emulation=False,
+              target_arch=None,
+              codesign_identity=None,
+              entitlements_file=None,
+              version='file_version_info.txt',
+          )
+          "@
+
+          $specContent | Out-File -FilePath "docuverse.spec" -Encoding utf8
+
+      - name: Create version info file
+        shell: pwsh
+        run: |
+          $versionInfo = @"
+          # UTF-8
+          #
+          # For more details about fixed file info 'ffi' see:
+          # http://msdn.microsoft.com/en-us/library/ms646997.aspx
+          VSVersionInfo(
+            ffi=FixedFileInfo(
+              # filevers and prodvers should be always a tuple with four items: (1, 2, 3, 4)
+              # Set not needed items to zero 0.
+              filevers=(${{ env.VERSION }}.replace('.', ',') + ',0'),
+              prodvers=(${{ env.VERSION }}.replace('.', ',') + ',0'),
+              # Contains a bitmask that specifies the valid bits 'flags'r
+              mask=0x3f,
+              # Contains a bitmask that specifies the Boolean attributes of the file.
+              flags=0x0,
+              # The operating system for which this file was designed.
+              # 0x4 - NT and there is no need to change it.
+              OS=0x40004,
+              # The general type of file.
+              # 0x1 - the file is an application.
+              fileType=0x1,
+              # The function of the file.
+              # 0x0 - the function is not defined for this fileType
+              subtype=0x0,
+              # Creation date and time stamp.
+              date=(0, 0)
+            ),
+            kids=[
+              StringFileInfo(
+                [
+                StringTable(
+                  u'040904B0',
+                  [StringStruct(u'CompanyName', u''),
+                  StringStruct(u'FileDescription', u'DocuVerse Q&A Application'),
+                  StringStruct(u'FileVersion', u'${{ env.VERSION }}'),
+                  StringStruct(u'InternalName', u'docuverse'),
+                  StringStruct(u'LegalCopyright', u''),
+                  StringStruct(u'OriginalFilename', u'docuverse.exe'),
+                  StringStruct(u'ProductName', u'DocuVerse'),
+                  StringStruct(u'ProductVersion', u'${{ env.VERSION }}')])
+                ]), 
+              VarFileInfo([VarStruct(u'Translation', [1033, 1200])])
+            ]
+          )
+          "@
+          $versionInfo | Out-File -FilePath "file_version_info.txt" -Encoding utf8
+
+      - name: Build with PyInstaller
+        shell: pwsh
+        run: |
+          & .\.venv\Scripts\Activate.ps1
+          # Build with verbose output and clean build directory
+          python -m PyInstaller --clean docuverse.spec
+      
+      - name: Verify built binary
+        shell: pwsh
+        run: |
+          # Check if binary was created successfully
+          $exePath = "dist\docuverse-${{ env.VERSION }}-win64.exe"
+          if (-not (Test-Path $exePath)) {
+            Write-Error "ERROR: PyInstaller failed to create the binary!"
+            exit 1
+          }
+          
+          # Output file information
+          Get-Item $exePath | Format-List
+          
+          # Check if it's a valid Windows executable
+          $fileInfo = Get-Item $exePath
+          if ($fileInfo.Extension -ne ".exe" -or $fileInfo.Length -lt 1MB) {
+            Write-Error "The output file doesn't appear to be a valid executable"
+            exit 1
+          }
+          
+          Write-Host "✓ Binary verification successful"
+      
+      - name: Create ZIP archive
+        shell: pwsh
+        run: |
+          $executablePath = "dist\docuverse-${{ env.VERSION }}-win64.exe"
+          if (Test-Path $executablePath) {
+            # Include README or any other necessary files
+            $zipPath = "dist\docuverse-${{ env.VERSION }}-win64.zip"
+            Compress-Archive -Path $executablePath -DestinationPath $zipPath -Force
+            echo "ZIP_PATH=$zipPath" | Out-File -FilePath $env:GITHUB_ENV -Append
+            echo "BUILD_SUCCESS=true" | Out-File -FilePath $env:GITHUB_ENV -Append
+            Write-Host "✓ ZIP archive created successfully at $zipPath"
+          } else {
+            Write-Error "No executable found in dist\"
+            echo "BUILD_SUCCESS=false" | Out-File -FilePath $env:GITHUB_ENV -Append
+          }
+      
+      - name: Upload artifact
+        if: env.BUILD_SUCCESS == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: docuverse-windows
+          path: ${{ env.ZIP_PATH }}
+          
+      - name: Set release info
+        id: release_info
+        shell: pwsh
+        run: |
+          # Get current date for development builds
+          $currentDate = Get-Date -Format "yyyyMMdd-HHmmss"
+          
+          # For tag-based releases
+          if ($env:GITHUB_REF -match "^refs/tags/v") {
+            $tagName = $env:GITHUB_REF -replace "^refs/tags/", ""
+            echo "IS_TAG=true" | Out-File -FilePath $env:GITHUB_ENV -Append
+            echo "TAG_NAME=$tagName" | Out-File -FilePath $env:GITHUB_ENV -Append
+            echo "RELEASE_NAME=docuverse ${{ env.VERSION }}" | Out-File -FilePath $env:GITHUB_ENV -Append
+            echo "SHOULD_RELEASE=true" | Out-File -FilePath $env:GITHUB_ENV -Append
+            Write-Host "Running on tag: $env:GITHUB_REF, tag name: $tagName"
+          }
+          # For pull requests
+          elseif ($env:GITHUB_REF -match "^refs/pull/") {
+            $prNumber = $env:GITHUB_REF -replace "^refs/pull/(\d+)/.*", '$1'
+            echo "IS_TAG=false" | Out-File -FilePath $env:GITHUB_ENV -Append
+            echo "SHOULD_RELEASE=false" | Out-File -FilePath $env:GITHUB_ENV -Append
+            Write-Host "Running on PR: $env:GITHUB_REF, PR number: $prNumber"
+          }
+          # For push to main
+          else {
+            echo "IS_TAG=false" | Out-File -FilePath $env:GITHUB_ENV -Append
+            echo "TAG_NAME=dev-${currentDate}" | Out-File -FilePath $env:GITHUB_ENV -Append
+            echo "RELEASE_NAME=docuverse ${{ env.VERSION }} (Development Build)" | Out-File -FilePath $env:GITHUB_ENV -Append
+            echo "PRERELEASE=true" | Out-File -FilePath $env:GITHUB_ENV -Append
+            echo "SHOULD_RELEASE=true" | Out-File -FilePath $env:GITHUB_ENV -Append
+            Write-Host "Running on branch: $env:GITHUB_REF"
+          }
+      
+      - name: Generate release notes
+        if: env.SHOULD_RELEASE == 'true' && env.BUILD_SUCCESS == 'true'
+        shell: pwsh
+        run: |
+          $releaseNotesContent = @"
+          # docuverse Q&A App Release v${{ env.VERSION }}
+          
+          This release provides the Windows executable for docuverse, a Q&A application for easy information retrieval from documents of interest.
+          
+          ## Installation
+          1. Download the ZIP file
+          2. Extract the executable
+          3. Run docuverse-${{ env.VERSION }}-win64.exe
+          
+          ## System Requirements
+          - Windows 10 or later
+          - No installation required (portable executable)
+          "@
+          
+          if ($env:GITHUB_REF -notmatch "^refs/tags/") {
+            $releaseNotesContent += @"
+          
+          ## Development Build
+          This is an automated development build, not an official release.
+          - Build triggered by: $env:GITHUB_REF
+          - Build date: $(Get-Date)
+          - Commit: $env:GITHUB_SHA
+          "@
+          }
+          
+          $releaseNotesContent | Out-File -FilePath "release_notes.md" -Encoding utf8
+      
+      - name: Create GitHub Release
+        if: env.SHOULD_RELEASE == 'true' && env.BUILD_SUCCESS == 'true'
+        uses: softprops/action-gh-release@v1
+        with:
+          files: ${{ env.ZIP_PATH }}
+          name: ${{ env.RELEASE_NAME }}
+          tag_name: ${{ env.TAG_NAME }}
+          body_path: release_notes.md
+          draft: false
+          prerelease: ${{ env.PRERELEASE == 'true' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
