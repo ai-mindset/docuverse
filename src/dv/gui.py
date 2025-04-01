@@ -78,7 +78,7 @@ class QAApplication:
         self.root = root
         self.root.title("DocuVerse Q&A")
         self.root.geometry("1000x750")
-        self.root.minsize(800, 600)
+        self.root.minsize(1280, 960)
 
         # Set appearance mode and default colour theme
         ctk.set_appearance_mode("dark")
