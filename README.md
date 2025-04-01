@@ -1,6 +1,6 @@
 # DocuVerse
 
-[![Build Linux AppImage](https://github.com/ai-mindset/docuverse/actions/workflows/build-linux.yml/badge.svg)](https://github.com/ai-mindset/docuverse/actions/workflows/build-linux.yml)  [![Python Linting and Formatting](https://github.com/ai-mindset/docuverse/actions/workflows/py-lint-format.yml/badge.svg)](https://github.com/ai-mindset/docuverse/actions/workflows/py-lint-format.yml)  [![Python Type Checking](https://github.com/ai-mindset/docuverse/actions/workflows/py-type-check.yml/badge.svg)](https://github.com/ai-mindset/docuverse/actions/workflows/py-type-check.yml)
+[![Build Linux AppImage](https://github.com/ai-mindset/docuverse/actions/workflows/build-linux.yml/badge.svg)](https://github.com/ai-mindset/docuverse/actions/workflows/build-linux.yml) [![Python Linting and Formatting](https://github.com/ai-mindset/docuverse/actions/workflows/py-lint-format.yml/badge.svg)](https://github.com/ai-mindset/docuverse/actions/workflows/py-lint-format.yml) [![Python Type Checking](https://github.com/ai-mindset/docuverse/actions/workflows/py-type-check.yml/badge.svg)](https://github.com/ai-mindset/docuverse/actions/workflows/py-type-check.yml)
 
 A self-hosted, privacy-preserving Question & Answer application for easy information retrieval from your personal document collection. DocuVerse (a blend of "Document" and "Converse") helps you interact with your documents through natural language queries, providing contextually relevant answers powered by language models—all while keeping your data completely private on your local machine.
 
