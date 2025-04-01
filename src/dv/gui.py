@@ -9,7 +9,6 @@ from tkinter import filedialog, messagebox
 from typing import Literal
 
 import customtkinter as ctk
-import ipdb
 
 # %%
 from dv.config import WeightLiteral, settings
@@ -43,7 +42,7 @@ class CustomCTkEntry(ctk.CTkEntry):
             "<Control-w>", self._delete_word
         )  # Also common shortcut in many editors
 
-    def _delete_word(self):
+    def _delete_word(self, _event=None):
         """Delete the word before the cursor."""
         # Get current content and cursor position
         content = self.get()
@@ -140,7 +139,7 @@ class QAApplication:
         """Create top button panel."""
         button_frame = ctk.CTkFrame(self.main_frame)
         button_frame.grid(row=0, column=0, sticky="ew", pady=(0, 10))
-        ipdb.set_trace()
+
         # Add document button
         self.add_doc_btn = ctk.CTkButton(
             button_frame,

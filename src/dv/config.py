@@ -10,7 +10,6 @@ from typing import Any, Literal, TypedDict
 
 from dotenv import load_dotenv
 from langchain_ollama import OllamaEmbeddings
-from ollama import Client
 from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 import dv.prompts as prompts
@@ -74,9 +73,9 @@ class Settings(BaseModel):
         default="docs",
         description="The directory path where documentation files are located.",
     )
-    CLIENT: Client = Field(
-        default=Client(host="http://localhost:11434"),
-        description="An instance of the Client class configured to connect to a specific host.",
+    CLIENT: str = Field(
+        default="http://localhost:11434",
+        description="Ollama localhost URL",
     )
     LLM_MODEL: str = Field(
         default="mistral-nemo",
