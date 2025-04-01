@@ -16,6 +16,7 @@ from dv.config import settings
 from dv.database import connect_to_db, process_all_documents
 from dv.gui import main as gui_main
 from dv.logger import setup_logging
+from dv.qa import create_qa_chain
 
 # %%
 # Ensure EXIT_KEYWORDS is in settings
@@ -177,8 +178,8 @@ def parse_arguments() -> argparse.Namespace:
     args = parser.parse_args()
 
     # Update settings with the parsed arguments
-    settings.temperature = args.temperature
-    settings.results = args.results
+    settings.TEMP = args.temperature
+    settings.RESULTS = args.results
 
     return args
 
@@ -212,7 +213,7 @@ def gui_prompt_loop(args: argparse.Namespace) -> int:
 
     from dv.gui import QAApplication
 
-    # Set appearance mode and default color theme
+    # Set appearance mode and default colour theme
     ctk.set_appearance_mode("light" if args.light_mode else "dark")
     ctk.set_default_color_theme("blue")
 

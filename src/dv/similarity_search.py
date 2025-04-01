@@ -8,6 +8,7 @@ import numpy as np
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 from langchain_ollama import OllamaEmbeddings
+from numpy.typing import NDArray
 
 from dv.config import embeddings as embeddings
 from dv.config import settings
@@ -55,6 +56,8 @@ def query_similarity(
         list[Document]: List of Document objects containing chunks ordered by similarity.
     """
     # Generate embedding for the query
+    if embeddings_model is None:
+        raise ValueError("No embeddings model provided")
     query_embedding = embeddings_model.embed_query(query)
 
     # Connect to database
@@ -120,7 +123,7 @@ def query_similarity(
         conn.close()
 
 
-def cosine_similarity(vec1: list[float], vec2: list[float]) -> float:
+def cosine_similarity(vec1: list[float] | NDArray, vec2: list[float] | NDArray) -> float:
     """
     Calculate cosine similarity between two vectors.
 

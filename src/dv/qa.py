@@ -40,10 +40,11 @@ class QAChain:
         self.temperature = temperature
         self.k = k
         self.vectorstore = create_vector_store()
+
         self.llm = ChatOllama(
             model=self.model_name,
             temperature=self.temperature,
-            client=settings.CLIENT,
+            base_url=settings.CLIENT,
         )
         self.chat_history = []
         self.qa_chain = self._create_qa_chain()

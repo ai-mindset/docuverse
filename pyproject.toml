@@ -24,6 +24,7 @@ dev = [
     "pynvim>=0.5.2", # Python client for Neovim
     "jedi-language-server>=0.43.1", # A language server for Jedi!
     "ruff>=0.9.3", # An extremely fast Python linter and code formatter, written in Rust
+    "pyright>=v1.1.398", # Command line wrapper for pyright 
     "ipython>=8.31.0", # IPython: Productive Interactive Computing
     "plotext>=5.3.2", # plotext plots directly on terminal
     "ipdb>=0.13.13", # IPython-enabled pdb
