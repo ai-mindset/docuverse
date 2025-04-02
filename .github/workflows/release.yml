@@ -1,0 +1,130 @@
+name: Create Combined Release
+
+on:
+  workflow_run:
+    workflows: ["Build Windows Executable", "Build Linux AppImage"]
+    types:
+      - completed
+    branches: [main]
+
+permissions:
+  contents: write
+  packages: read
+
+jobs:
+  release:
+    # Only run if all required workflows completed successfully
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Extract version from pyproject.toml
+        id: get_version
+        run: |
+          VERSION=$(python -c "import toml; print(toml.load('pyproject.toml')['project']['version'])")
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "Version: $VERSION"
+      
+      - name: Set release info
+        id: release_info
+        run: |
+          # Get current date for development builds
+          CURRENT_DATE=$(date +%Y%m%d-%H%M%S)
+          
+          # For tag-based releases
+          if [[ $GITHUB_REF == refs/tags/* ]]; then
+            echo "IS_TAG=true" >> $GITHUB_ENV
+            echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+            echo "RELEASE_NAME=docuverse ${{ env.VERSION }}" >> $GITHUB_ENV
+          # For push to main
+          else
+            echo "IS_TAG=false" >> $GITHUB_ENV
+            echo "TAG_NAME=v${{ env.VERSION }}-${CURRENT_DATE}" >> $GITHUB_ENV
+            echo "RELEASE_NAME=docuverse ${{ env.VERSION }} (Development Build)" >> $GITHUB_ENV
+            echo "PRERELEASE=true" >> $GITHUB_ENV
+          fi
+      
+      - name: Download Windows artifact
+        uses: dawidd6/action-download-artifact@v2
+        with:
+          workflow: "Build Windows Executable"
+          name: docuverse-windows
+          path: artifacts/windows
+      
+      - name: Download Linux artifact
+        uses: dawidd6/action-download-artifact@v2
+        with:
+          workflow: "Build Linux AppImage"
+          name: docuverse-linux
+          path: artifacts/linux
+      
+      - name: Verify downloaded artifacts
+        run: |
+          find artifacts -type f | sort
+          
+          # Make sure both artifacts exist
+          if [ ! -f "$(find artifacts/windows -name "*.zip" 2>/dev/null | head -1)" ]; then
+            echo "ERROR: Windows artifact not found!"
+            exit 1
+          fi
+          
+          if [ ! -f "$(find artifacts/linux -name "*.AppImage" 2>/dev/null | head -1)" ]; then
+            echo "ERROR: Linux artifact not found!"
+            exit 1
+          fi
+          
+          # Move artifacts to the release directory
+          mkdir -p release
+          cp $(find artifacts/windows -name "*.zip" | head -1) release/docuverse-${{ env.VERSION }}-win64.zip
+          cp $(find artifacts/linux -name "*.AppImage" | head -1) release/docuverse-${{ env.VERSION }}-x86_64.AppImage
+          
+          # Make the AppImage executable
+          chmod +x release/docuverse-${{ env.VERSION }}-x86_64.AppImage
+          
+          echo "All artifacts prepared for release"
+      
+      - name: Generate release notes
+        run: |
+          cat > release_notes.md << EOF
+          # docuverse Q&A App Release v${{ env.VERSION }}
+          
+          This release provides both Windows and Linux executables for docuverse, a Q&A application for easy information retrieval from documents of interest.
+          
+          ## Windows Installation
+          1. Download the ZIP file
+          2. Extract the executable
+          3. Run docuverse-${{ env.VERSION }}-win64.exe
+          
+          ## Linux Installation
+          1. Download the AppImage
+          2. Make it executable: \`chmod +x docuverse-${{ env.VERSION }}-x86_64.AppImage\`
+          3. Run it: \`./docuverse-${{ env.VERSION }}-x86_64.AppImage\`
+          EOF
+          
+          if [[ $GITHUB_REF != refs/tags/* ]]; then
+            cat >> release_notes.md << EOF
+          
+          ## Development Build
+          This is an automated development build, not an official release.
+          - Build triggered by: $GITHUB_REF
+          - Build date: $(date)
+          - Commit: $GITHUB_SHA
+          EOF
+          fi
+      
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            release/docuverse-${{ env.VERSION }}-win64.zip
+            release/docuverse-${{ env.VERSION }}-x86_64.AppImage
+          name: ${{ env.RELEASE_NAME }}
+          tag_name: ${{ env.TAG_NAME }}
+          body_path: release_notes.md
+          draft: false
+          prerelease: ${{ env.PRERELEASE == 'true' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
