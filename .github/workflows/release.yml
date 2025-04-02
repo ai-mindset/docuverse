@@ -1,4 +1,4 @@
-name: Create Combined Release
+name: Combined Release
 
 on:
   workflow_run:
@@ -24,6 +24,9 @@ jobs:
       - name: Extract version from pyproject.toml
         id: get_version
         run: |
+          # Install toml module
+          pip install toml
+          # Extract version
           VERSION=$(python -c "import toml; print(toml.load('pyproject.toml')['project']['version'])")
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "Version: $VERSION"
