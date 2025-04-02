@@ -1,4 +1,4 @@
-name: Combined Release
+name: Create Release
 
 on:
   workflow_run:
@@ -10,84 +10,143 @@ on:
 permissions:
   contents: write
   packages: read
+  actions: read
 
 jobs:
+  check-workflows:
+    runs-on: ubuntu-latest
+    outputs:
+      should_release: ${{ steps.check.outputs.should_release }}
+    
+    steps:
+      - name: Check workflow statuses
+        id: check
+        run: |
+          echo "Checking workflow statuses..."
+          
+          # Get recent workflow runs for Windows
+          WINDOWS_STATUS=$(curl -s \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/windows.yml/runs?branch=main&per_page=1" | \
+            jq -r '.workflow_runs[0].conclusion')
+          
+          # Get recent workflow runs for Linux
+          LINUX_STATUS=$(curl -s \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/linux.yml/runs?branch=main&per_page=1" | \
+            jq -r '.workflow_runs[0].conclusion')
+          
+          echo "Windows build status: $WINDOWS_STATUS"
+          echo "Linux build status: $LINUX_STATUS"
+          
+          # Check if both are successful
+          if [[ "$WINDOWS_STATUS" == "success" && "$LINUX_STATUS" == "success" ]]; then
+            echo "Both workflows have completed successfully"
+            echo "should_release=true" >> $GITHUB_OUTPUT
+          else
+            echo "Not all workflows have completed successfully"
+            echo "should_release=false" >> $GITHUB_OUTPUT
+          fi
+
   release:
-    # Only run if all required workflows completed successfully
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    needs: check-workflows
+    if: needs.check-workflows.outputs.should_release == 'true'
     runs-on: ubuntu-latest
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
       
+      - name: Install toml
+        run: pip install toml
+      
       - name: Extract version from pyproject.toml
-        id: get_version
         run: |
-          # Install toml module
-          pip install toml
-          # Extract version
           VERSION=$(python -c "import toml; print(toml.load('pyproject.toml')['project']['version'])")
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "Version: $VERSION"
       
-      - name: Set release info
-        id: release_info
+      - name: Set release tag
         run: |
           # Get current date for development builds
           CURRENT_DATE=$(date +%Y%m%d-%H%M%S)
           
           # For tag-based releases
           if [[ $GITHUB_REF == refs/tags/* ]]; then
-            echo "IS_TAG=true" >> $GITHUB_ENV
             echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
             echo "RELEASE_NAME=docuverse ${{ env.VERSION }}" >> $GITHUB_ENV
-          # For push to main
+            echo "PRERELEASE=false" >> $GITHUB_ENV
           else
-            echo "IS_TAG=false" >> $GITHUB_ENV
             echo "TAG_NAME=v${{ env.VERSION }}-${CURRENT_DATE}" >> $GITHUB_ENV
             echo "RELEASE_NAME=docuverse ${{ env.VERSION }} (Development Build)" >> $GITHUB_ENV
             echo "PRERELEASE=true" >> $GITHUB_ENV
           fi
       
-      - name: Download Windows artifact
-        uses: dawidd6/action-download-artifact@v6
-        with:
-          workflow: "Build Windows Executable"
-          name: docuverse-windows
-          path: artifacts/windows
-      
-      - name: Download Linux artifact
-        uses: dawidd6/action-download-artifact@v6
-        with:
-          workflow: "Build Linux AppImage"
-          name: docuverse-linux
-          path: artifacts/linux
-      
-      - name: Verify downloaded artifacts
+      - name: Download release assets
         run: |
-          find artifacts -type f | sort
-          
-          # Make sure both artifacts exist
-          if [ ! -f "$(find artifacts/windows -name "*.zip" 2>/dev/null | head -1)" ]; then
-            echo "ERROR: Windows artifact not found!"
-            exit 1
-          fi
-          
-          if [ ! -f "$(find artifacts/linux -name "*.AppImage" 2>/dev/null | head -1)" ]; then
-            echo "ERROR: Linux artifact not found!"
-            exit 1
-          fi
-          
-          # Move artifacts to the release directory
+          # Create directory for release assets
           mkdir -p release
-          cp $(find artifacts/windows -name "*.zip" | head -1) release/docuverse-${{ env.VERSION }}-win64.zip
-          cp $(find artifacts/linux -name "*.AppImage" | head -1) release/docuverse-${{ env.VERSION }}-x86_64.AppImage
+
+          # Install jq for JSON processing (should be pre-installed on Ubuntu runners)
+          sudo apt-get update && sudo apt-get install -y jq
+          
+          # Linux artifact - download from latest successful run
+          echo "Downloading Linux artifact..."
+          LINUX_URL=$(curl -s \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/artifacts?name=docuverse-linux&per_page=1" | \
+            jq -r '.artifacts[0].archive_download_url')
+          
+          if [[ "$LINUX_URL" == "null" || -z "$LINUX_URL" ]]; then
+            echo "Error: Could not find Linux artifact"
+            exit 1
+          fi
+          
+          wget -q "$LINUX_URL" -O linux.zip
+          
+          # Windows artifact - download from latest successful run
+          echo "Downloading Windows artifact..."
+          WINDOWS_URL=$(curl -s \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/artifacts?name=docuverse-windows&per_page=1" | \
+            jq -r '.artifacts[0].archive_download_url')
+          
+          if [[ "$WINDOWS_URL" == "null" || -z "$WINDOWS_URL" ]]; then
+            echo "Error: Could not find Windows artifact"
+            exit 1
+          fi
+          
+          wget -q "$WINDOWS_URL" -O windows.zip
+          
+          # Extract artifacts
+          echo "Extracting artifacts..."
+          unzip -q linux.zip -d linux-temp
+          unzip -q windows.zip -d windows-temp
+          
+          echo "Linux temp directory contents:"
+          ls -la linux-temp/
+          
+          echo "Windows temp directory contents:"
+          ls -la windows-temp/
+          
+          # Move extracted files to release directory with consistent naming
+          mv linux-temp/*.AppImage release/docuverse-${{ env.VERSION }}-x86_64.AppImage
+          mv windows-temp/*.zip release/docuverse-${{ env.VERSION }}-win64.zip
           
           # Make the AppImage executable
           chmod +x release/docuverse-${{ env.VERSION }}-x86_64.AppImage
           
-          echo "All artifacts prepared for release"
+          # List the files that will be included in the release
+          echo "Files for release:"
+          ls -la release/
       
       - name: Generate release notes
         run: |
@@ -107,27 +166,23 @@ jobs:
           3. Run it: \`./docuverse-${{ env.VERSION }}-x86_64.AppImage\`
           EOF
           
-          if [[ $GITHUB_REF != refs/tags/* ]]; then
+          if [[ "${{ env.PRERELEASE }}" == "true" ]]; then
             cat >> release_notes.md << EOF
           
           ## Development Build
           This is an automated development build, not an official release.
-          - Build triggered by: $GITHUB_REF
           - Build date: $(date)
-          - Commit: $GITHUB_SHA
           EOF
           fi
       
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          files: |
-            release/docuverse-${{ env.VERSION }}-win64.zip
-            release/docuverse-${{ env.VERSION }}-x86_64.AppImage
+          files: release/*
           name: ${{ env.RELEASE_NAME }}
           tag_name: ${{ env.TAG_NAME }}
           body_path: release_notes.md
           draft: false
-          prerelease: ${{ env.PRERELEASE == 'true' }}
+          prerelease: ${{ env.PRERELEASE }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
