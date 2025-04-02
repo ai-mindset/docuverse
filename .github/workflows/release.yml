@@ -1,4 +1,4 @@
-name: Create Release
+name: Combined Release
 
 on:
   workflow_run:
@@ -97,61 +97,39 @@ jobs:
             echo "RELEASE_NAME=docuverse ${{ env.VERSION }} (Development Build)" >> $GITHUB_ENV
             echo "PRERELEASE=true" >> $GITHUB_ENV
           fi
-      
-      - name: Download release assets
-        run: |
-          # Create directory for release assets
-          mkdir -p release
 
-          # Install jq for JSON processing (should be pre-installed on Ubuntu runners)
-          sudo apt-get update && sudo apt-get install -y jq
+      - name: Download Windows artifact
+        uses: dawidd6/action-download-artifact@v2
+        with:
+          name: docuverse-windows
+          path: windows-artifact
+          workflow_conclusion: success
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          workflow: Build Windows Executable
+      
+      - name: Download Linux artifact
+        uses: dawidd6/action-download-artifact@v2
+        with:
+          name: docuverse-linux
+          path: linux-artifact
+          workflow_conclusion: success
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          workflow: Build Linux AppImage
+      
+      - name: Prepare release files
+        run: |
+          # Create release directory
+          mkdir -p release
           
-          # Linux artifact - download from latest successful run
-          echo "Downloading Linux artifact..."
-          LINUX_URL=$(curl -s \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/${{ github.repository }}/actions/artifacts?name=docuverse-linux&per_page=1" | \
-            jq -r '.artifacts[0].archive_download_url')
+          # Check what we downloaded
+          echo "Windows artifact contents:"
+          ls -la windows-artifact/
+          echo "Linux artifact contents:"
+          ls -la linux-artifact/
           
-          if [[ "$LINUX_URL" == "null" || -z "$LINUX_URL" ]]; then
-            echo "Error: Could not find Linux artifact"
-            exit 1
-          fi
-          
-          wget -q "$LINUX_URL" -O linux.zip
-          
-          # Windows artifact - download from latest successful run
-          echo "Downloading Windows artifact..."
-          WINDOWS_URL=$(curl -s \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/${{ github.repository }}/actions/artifacts?name=docuverse-windows&per_page=1" | \
-            jq -r '.artifacts[0].archive_download_url')
-          
-          if [[ "$WINDOWS_URL" == "null" || -z "$WINDOWS_URL" ]]; then
-            echo "Error: Could not find Windows artifact"
-            exit 1
-          fi
-          
-          wget -q "$WINDOWS_URL" -O windows.zip
-          
-          # Extract artifacts
-          echo "Extracting artifacts..."
-          unzip -q linux.zip -d linux-temp
-          unzip -q windows.zip -d windows-temp
-          
-          echo "Linux temp directory contents:"
-          ls -la linux-temp/
-          
-          echo "Windows temp directory contents:"
-          ls -la windows-temp/
-          
-          # Move extracted files to release directory with consistent naming
-          mv linux-temp/*.AppImage release/docuverse-${{ env.VERSION }}-x86_64.AppImage
-          mv windows-temp/*.zip release/docuverse-${{ env.VERSION }}-win64.zip
+          # Move files to release directory with consistent naming
+          cp $(find windows-artifact -name "*.zip") release/docuverse-${{ env.VERSION }}-win64.zip
+          cp $(find linux-artifact -name "*.AppImage") release/docuverse-${{ env.VERSION }}-x86_64.AppImage
           
           # Make the AppImage executable
           chmod +x release/docuverse-${{ env.VERSION }}-x86_64.AppImage
