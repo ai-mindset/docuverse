@@ -48,14 +48,14 @@ jobs:
           fi
       
       - name: Download Windows artifact
-        uses: dawidd6/action-download-artifact@v2
+        uses: dawidd6/action-download-artifact@v6
         with:
           workflow: "Build Windows Executable"
           name: docuverse-windows
           path: artifacts/windows
       
       - name: Download Linux artifact
-        uses: dawidd6/action-download-artifact@v2
+        uses: dawidd6/action-download-artifact@v6
         with:
           workflow: "Build Linux AppImage"
           name: docuverse-linux
