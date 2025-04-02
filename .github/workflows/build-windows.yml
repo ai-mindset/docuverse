@@ -229,16 +229,17 @@ jobs:
       - name: Create ZIP archive
         shell: pwsh
         run: |
-          $executablePath = "dist\docuverse-${{ env.VERSION }}-win64.exe"
+          $executablePath = "dist/docuverse-${{ env.VERSION }}-win64.exe"
           if (Test-Path $executablePath) {
-            $zipPath = "dist\docuverse-${{ env.VERSION }}-win64.zip"
+            $zipPath = "dist/docuverse-${{ env.VERSION }}-win64.zip"
             Compress-Archive -Path $executablePath -DestinationPath $zipPath -Force
-            Write-Host "::set-output name=zip_path::$zipPath"
+            # Use forward slashes for GitHub Actions compatibility
             echo "ZIP_PATH=$zipPath" >> $env:GITHUB_ENV
             echo "BUILD_SUCCESS=true" >> $env:GITHUB_ENV
             Write-Host "ZIP created successfully at: $zipPath"
           } else {
             Write-Error "No executable found at: $executablePath"
+            ls dist/ -Force
             echo "BUILD_SUCCESS=false" >> $env:GITHUB_ENV
           }
       
@@ -281,14 +282,9 @@ jobs:
             echo "SHOULD_RELEASE=true" >> $env:GITHUB_ENV
             Write-Host "Running on branch: $env:GITHUB_REF"
           }
-          
-          # Always output the release status for debugging
-          Write-Host "SHOULD_RELEASE: $env:SHOULD_RELEASE"
-          Write-Host "BUILD_SUCCESS: $env:BUILD_SUCCESS"
-          Write-Host "ZIP_PATH: $env:ZIP_PATH"
       
       - name: Generate release notes
-        if: ${{ env.SHOULD_RELEASE == 'true' && env.BUILD_SUCCESS == 'true' }}
+        if: env.SHOULD_RELEASE == 'true' && env.BUILD_SUCCESS == 'true'
         shell: pwsh
         run: |
           $releaseNotesContent = @"
@@ -320,21 +316,26 @@ jobs:
           $releaseNotesContent | Out-File -FilePath "release_notes.md" -Encoding utf8
           Write-Host "Release notes generated successfully"
       
-      - name: Debug release variables
+      - name: Check file existence before release
         shell: pwsh
         run: |
-          Write-Host "SHOULD_RELEASE: $env:SHOULD_RELEASE"
-          Write-Host "BUILD_SUCCESS: $env:BUILD_SUCCESS"
-          Write-Host "ZIP_PATH: $env:ZIP_PATH"
-          Write-Host "TAG_NAME: $env:TAG_NAME"
-          Write-Host "RELEASE_NAME: $env:RELEASE_NAME"
-          Write-Host "File exists check for ZIP: $(Test-Path $env:ZIP_PATH)"
+          Write-Host "Checking ZIP file exists: ${{ env.ZIP_PATH }}"
+          if (Test-Path "${{ env.ZIP_PATH }}") {
+              Write-Host "✅ ZIP file exists"
+              # Copy to root directory with forward slashes to ensure GitHub Release action finds it
+              Copy-Item "${{ env.ZIP_PATH }}" -Destination "./windows-executable.zip"
+              echo "RELEASE_FILE=./windows-executable.zip" >> $env:GITHUB_ENV
+          } else {
+              Write-Host "❌ ZIP file not found"
+              Write-Host "Directory contents:"
+              Get-ChildItem -Path "dist" -Recurse | Select-Object FullName
+          }
       
       - name: Create GitHub Release
-        if: ${{ env.SHOULD_RELEASE == 'true' && env.BUILD_SUCCESS == 'true' }}
+        if: env.SHOULD_RELEASE == 'true' && env.BUILD_SUCCESS == 'true'
         uses: softprops/action-gh-release@v1
         with:
-          files: ${{ env.ZIP_PATH }}
+          files: ${{ env.RELEASE_FILE }}
           name: ${{ env.RELEASE_NAME }}
           tag_name: ${{ env.TAG_NAME }}
           body_path: release_notes.md
