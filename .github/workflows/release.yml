@@ -1,4 +1,4 @@
-name: Create Combined Release
+name: Combined Release
 
 on:
   workflow_run:

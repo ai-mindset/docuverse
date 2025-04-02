@@ -1,4 +1,4 @@
-name: Python Linting and Formatting
+name: Ruff Lint and Format 
 
 on:
   push:
