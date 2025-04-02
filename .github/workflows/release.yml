@@ -98,23 +98,132 @@ jobs:
             echo "PRERELEASE=true" >> $GITHUB_ENV
           fi
 
-      - name: Download Windows artifact
-        uses: dawidd6/action-download-artifact@v2
-        with:
-          name: docuverse-windows
-          path: windows-artifact
-          workflow_conclusion: success
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          workflow: Build Windows Executable
-      
-      - name: Download Linux artifact
-        uses: dawidd6/action-download-artifact@v2
-        with:
-          name: docuverse-linux
-          path: linux-artifact
-          workflow_conclusion: success
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          workflow: Build Linux AppImage
+      - name: Find and download artifacts
+        run: |
+          echo "Finding latest artifacts..."
+          
+          # Find latest successful Windows workflow
+          WINDOWS_RUN_ID=$(curl -s \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows" | \
+            jq -r '.workflows[] | select(.name=="Build Windows Executable") | .id' | \
+            xargs -I{} curl -s \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/{}/runs?status=success&branch=main&per_page=1" | \
+            jq -r '.workflow_runs[0].id')
+          
+          echo "Latest Windows successful run ID: $WINDOWS_RUN_ID"
+          
+          if [[ -z "$WINDOWS_RUN_ID" || "$WINDOWS_RUN_ID" == "null" ]]; then
+            echo "Error: Could not find successful Windows build"
+            exit 1
+          fi
+          
+          # Find latest successful Linux workflow
+          LINUX_RUN_ID=$(curl -s \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows" | \
+            jq -r '.workflows[] | select(.name=="Build Linux AppImage") | .id' | \
+            xargs -I{} curl -s \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/{}/runs?status=success&branch=main&per_page=1" | \
+            jq -r '.workflow_runs[0].id')
+          
+          echo "Latest Linux successful run ID: $LINUX_RUN_ID"
+          
+          if [[ -z "$LINUX_RUN_ID" || "$LINUX_RUN_ID" == "null" ]]; then
+            echo "Error: Could not find successful Linux build"
+            exit 1
+          fi
+          
+          # Create directories
+          mkdir -p windows-artifact linux-artifact release
+          
+          # Download Windows artifacts
+          echo "Downloading Windows artifacts from run $WINDOWS_RUN_ID..."
+          WINDOWS_ARTIFACTS=$(curl -s \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/runs/$WINDOWS_RUN_ID/artifacts")
+          
+          # Get Windows artifact ID
+          WINDOWS_ARTIFACT_ID=$(echo "$WINDOWS_ARTIFACTS" | jq -r '.artifacts[] | select(.name=="docuverse-windows") | .id')
+          
+          if [[ -z "$WINDOWS_ARTIFACT_ID" || "$WINDOWS_ARTIFACT_ID" == "null" ]]; then
+            echo "Error: Could not find Windows artifact in run $WINDOWS_RUN_ID"
+            echo "Available artifacts:"
+            echo "$WINDOWS_ARTIFACTS" | jq -r '.artifacts[].name'
+            exit 1
+          fi
+          
+          # Download Windows artifact
+          echo "Downloading Windows artifact ID: $WINDOWS_ARTIFACT_ID"
+          curl -L \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/artifacts/$WINDOWS_ARTIFACT_ID/zip" \
+            --output windows-artifact.zip
+          
+          # Download Linux artifacts
+          echo "Downloading Linux artifacts from run $LINUX_RUN_ID..."
+          LINUX_ARTIFACTS=$(curl -s \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/runs/$LINUX_RUN_ID/artifacts")
+          
+          # Get Linux artifact ID
+          LINUX_ARTIFACT_ID=$(echo "$LINUX_ARTIFACTS" | jq -r '.artifacts[] | select(.name=="docuverse-linux") | .id')
+          
+          if [[ -z "$LINUX_ARTIFACT_ID" || "$LINUX_ARTIFACT_ID" == "null" ]]; then
+            echo "Error: Could not find Linux artifact in run $LINUX_RUN_ID"
+            echo "Available artifacts:"
+            echo "$LINUX_ARTIFACTS" | jq -r '.artifacts[].name'
+            exit 1
+          fi
+          
+          # Download Linux artifact
+          echo "Downloading Linux artifact ID: $LINUX_ARTIFACT_ID"
+          curl -L \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/artifacts/$LINUX_ARTIFACT_ID/zip" \
+            --output linux-artifact.zip
+          
+          # Extract the artifacts
+          unzip -q windows-artifact.zip -d windows-artifact
+          unzip -q linux-artifact.zip -d linux-artifact
+          
+          # Check what we extracted
+          echo "Windows artifact contents:"
+          ls -la windows-artifact/
+          echo "Linux artifact contents:"
+          ls -la linux-artifact/
+          
+          # Copy files to release directory with consistent naming
+          cp windows-artifact/*.zip release/docuverse-${{ env.VERSION }}-win64.zip || \
+            cp $(find windows-artifact -name "*.zip") release/docuverse-${{ env.VERSION }}-win64.zip
+          
+          cp linux-artifact/*.AppImage release/docuverse-${{ env.VERSION }}-x86_64.AppImage || \
+            cp $(find linux-artifact -name "*.AppImage") release/docuverse-${{ env.VERSION }}-x86_64.AppImage
+          
+          # Make the AppImage executable
+          chmod +x release/docuverse-${{ env.VERSION }}-x86_64.AppImage
+          
+          # List the files that will be included in the release
+          echo "Files for release:"
+          ls -la release/
       
       - name: Prepare release files
         run: |
